@@ -1,3 +1,41 @@
+CUSTOM	= $dff000	; Start of custom chips
+
+; Custom chip register offsets
+DMACONR = $002	; DMA control read
+BLTCON0 = $040	; Blitter control register 0
+BLTCON1 = $042	; Blitter control register 1
+BLTAFWM	= $044	; Blitter first word mask for source A
+BLTALWM	= $046	; Blitter last word mask for source A
+BLTAPTH	= $050	; Blitter pointer to source A (high)
+BLTDPTH	= $054	; Blitter pointer to destination D (high)
+BLTSIZE	= $058	; Blit size (starts blit)
+BLTAMOD	= $064	; Blitter modulo for source A
+BLTDMOD	= $066	; Blitter modulo for destination D
+COP1LCH	= $080	; Copper pointer 1 (high)
+COPJMP1	= $088	; Trigger copper 1 (any value)
+DIWSTRT	= $08e	; Display window start
+DIWSTOP = $090	; Display window stop
+DDFSTRT	= $092	; Display bitplane data fetch start
+DDFSTOP	= $094	; Display bitplane data fetch stop
+DMACON	= $096	; DMA control write
+INTENA	= $09a	; Interrupt enable bits
+INTREQ	= $09c	; Interrupt request bits
+BPL1PTH	= $0e0	; Bitplane pointer 1 (high)
+BPLCON0	= $100	; Bitplane depth and screen mode
+BPLCON1	= $102	; Bitplane/playfield horizontal scroll values
+BPL1MOD	= $108	; Bitplane modulo (odd planes)
+COLOR0	= $180	; Color 0
+COLOR1	= $182	; Color 1
+
+; Constants
+COLS	= 80
+ROWS	= 32
+WIDTH	= 640
+HEIGHT	= 256
+
+
+
+
 	code_c
 
 ; Function 0: Initialization
@@ -5,29 +43,29 @@
 ;	d0.w: $00
 ; Return value: d0.w: user/disk numbers
 _init:
-	lea	$dff000,a6
-	move.w	#$7fff,$9a(a6)		; disable interrupts (intena)
-	move.w	#$7fff,$9c(a6)		; clear interrupts (intreq)
-	move.w	#$7fff,$96(a6)		; disable dma (dmacon)
-	move.w	#$9200,$100(a6)		; bplcon0: hires, one bit plane, color enabled
-	move.w	#0,$102(a6)		; bplcon1: horizontal scroll value = 0
-	move.w	#0,$108(a6)		; bplmod1: set modulo 0 for all odd bit planes
-	move.w	#0,$10a(a6)		; bplmod2: set modulo 0 for all even bit planes
-	move.w	#$3c,$92(a6)		; ddfstrt: data fetch start for hires
-	move.w	#$d4,$94(a6)		; ddfstop: data fetch stop
-	move.w	#$2c81,$8e(a6)		; diwstrt: display window start
-	move.w	#$2cc1,$90(a6)		; diwstop: display window stop
-	move.w	#$ccc,$180(a6)		; color0: light gray
-	move.w	#$000,$182(a6)		; color1: black
+	lea	CUSTOM,a6
+	move.w	#$7fff,INTENA(a6)	; disable interrupts
+	move.w	#$7fff,INTREQ(a6)	; clear interrupts
+	move.w	#$7fff,DMACON(a6)	; disable dma (dmacon)
+	move.w	#$9200,BPLCON0(a6)	; hires, one bit plane, color enabled
+	move.w	#0,BPLCON1(a6)		; horizontal scroll value = 0
+	move.w	#0,BPL1MOD(a6)		; set modulo 0 for all odd bit planes
+	;move.w	#0,$10a(a6)		; bplmod2: set modulo 0 for all even bit planes
+	move.w	#$3c,DDFSTRT(a6)	; data fetch start for hires
+	move.w	#$d4,DDFSTOP(a6)	; data fetch stop
+	move.w	#$2c81,DIWSTRT(a6)	; display window start
+	move.w	#$2cc1,DIWSTOP(a6)	; display window stop
+	move.w	#$ccc,COLOR0(a6)	; color0: light gray
+	move.w	#$000,COLOR1(a6)	; color1: black
 
 	move.l	#screen,d0		; set copper list
 	move.w	d0,copper+6
 	swap	d0
 	move.w	d0,copper+2
 
-	move.l	#copper,$80(a6)		; set copper list address
-	move.w	$88(a6),d0		; jump to copper 1 list
-	move.w	#$83c0,$96(a6)		; dmacon: enable bit-plane, blitter and copper dma
+	move.l	#copper,COP1LCH(a6)	; set copper list address
+	clr.w	COPJMP1(a6)		; jump to copper 1 list
+	move.w	#$83c0,DMACON(a6)	; dmacon: enable bit-plane, blitter and copper dma
 
 	lea	text,a2
 .loop:
@@ -99,7 +137,7 @@ waitblit:
 .waitblit0:
 	btst	#14,$2(a0)	; wait blit to complete (dmaconr)
 	bne	.waitblit0
-	rts
+	rts 
 
 ; Function 1: Warm boot
 ; Entry parameters:
@@ -175,34 +213,34 @@ conout:
 	jsr	waitblit
 	move.w	#31,.row
 	move.l	#screen,d0
-	move.l	d0,$54(a0)	; destination address (bltdpth)
+	move.l	d0,BLTDPTH(a0)	; destination address (bltdpth)
 	add.l	#8*80,d0
-	move.l	d0,$50(a0)	; source address (bltapth)
-	move.w	#0,$64(a0)	; zero modulo (bltamod)
-	move.w	#0,$66(a0)	; zero modulo (bltdmod)
-	move.w	#$ffff,$44(a0)	; first word mask (bltafwm)
-	move.w	#$ffff,$46(a0)	; last word mask (bltalwm)
-	move.w	#0,$42(a0)	; bltcon1
-	move.w	#$9f0,$40(a0)	; use A&D, minterm = A (bltcon0)
-	move.w	#((248<<6)|(80/2)),$58(a0)	; height = 248, width = 40 words
+	move.l	d0,BLTAPTH(a0)	; source address (bltapth)
+	move.w	#0,BLTAMOD(a0)	; zero modulo (bltamod)
+	move.w	#0,BLTDMOD(a0)	; zero modulo (bltdmod)
+	move.w	#-1,BLTAFWM(a0)	; first word mask (bltafwm)
+	move.w	#-1,BLTALWM(a0)	; last word mask (bltalwm)
+	move.w	#0,BLTCON1(a0)	; bltcon1
+	move.w	#$9f0,BLTCON0(a0)		; use A&D, minterm = A (bltcon0)
+	move.w	#((248<<6)|(80/2)),BLTSIZE(a0)	; height = 248, width = 40 words
 	jsr	waitblit
 	move.l	#screen,d0
 	add.l	#248*80,d0
-	move.l	d0,$54(a0)	; destination address (bltdpth)
-	move.w	#0,$66(a0)	; zero modulo (bltdmod)
-	move.w	#0,$42(a0)	; bltcon1
-	move.w	#$100,$40(a0)	; use D, minterm = none (bltcon0)
-	move.w	#((8<<6)|(80/2)),$58(a0)	; height = 8, width = 40 words
+	move.l	d0,BLTDPTH(a0)			; destination address (bltdpth)
+	move.w	#0,BLTDMOD(a0)			; zero modulo (bltdmod)
+	move.w	#0,BLTCON1(a0)			; bltcon1
+	move.w	#$100,BLTCON0(a0)		; use D, minterm = none (bltcon0)
+	move.w	#((8<<6)|(80/2)),BLTSIZE(a0)	; height = 8, width = 40 words
 	jsr	waitblit
 	;move.w	#$ffff,screen
 	rts
 .cls:
 	jsr	waitblit
-	move.l	#screen,$54(a0)	; destination address (bltdpth)
-	move.w	#0,$66(a0)	; zero modulo (bltdmod)
-	move.w	#0,$42(a0)	; bltcon1
-	move.w	#$100,$40(a0)	; use D, minterm = none (bltcon0)
-	move.w	#((256<<6)|(80/2)),$58(a0)	; height = 256, width = 40 words
+	move.l	#screen,BLTDPTH(a0)		; destination address (bltdpth)
+	move.w	#0,BLTDMOD(a0)			; zero modulo (bltdmod)
+	move.w	#0,BLTCON1(a0)			; bltcon1
+	move.w	#$100,BLTCON0(a0)		; use D, minterm = none (bltcon0)
+	move.w	#((256<<6)|(80/2)),BLTSIZE(a0)	; height = 256, width = 40 words
 .waitmouse:
 	btst	#6,$bfe001
 	bne	.waitmouse
