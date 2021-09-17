@@ -28,10 +28,14 @@ COLOR0	= $180	; Color 0
 COLOR1	= $182	; Color 1
 
 ; Constants
-COLS	= 80
-ROWS	= 32
-WIDTH	= 640
-HEIGHT	= 256
+LEFTSHIFT	= $60
+RIGHTSHIFT	= $61
+CAPSLOCK	= $62
+CONTROL		= $63
+COLS		= $50
+ROWS		= $20
+WIDTH		= 640
+HEIGHT		= 256
 
 ; CIA base addresses
 CIAA	= $bfe001
@@ -111,6 +115,10 @@ _init:
 	bsr	conout
 	bra	.loop
 .skip:
+	bsr	conin
+	move.w	d0,d1
+	bsr	conout
+	bra	.skip
 	jmp	*
 text:	;dc.b	"Hello, World!",13,10,"Does this work?",13,10
 	;dc.b	"Very long line:",13,10
@@ -155,8 +163,8 @@ text:	;dc.b	"Hello, World!",13,10,"Does this work?",13,10
 	dc.b	"	bra	.loop",13,10
 	dc.b	".skip:",13,10
 	dc.b	"	jmp	*",13,10
-	dc.b	$1b,"=  ","testing",0
-;	dc.b	"yksi",8,8,8,8,8,"kaksi",11,"kolme",13,"nelja",11,"viisi",0
+	;dc.b	$1b,"=  ","testing",0
+	dc.b	"yksi",8,8,8,8,8,"kaksi",11,"kolme",13,"nelja",11,"viisi",0
 
 ;	dc.b	"1",13,"2",13,"3",13,"4",13,"5",13,"6",13,"7",13,"8",13,"9",13,"10",13
 ;	dc.b	"11",13,"12",13,"13",13,"14",13,"15",13,"16",13,"17",13,"18",13,"19",13,"20",13
@@ -185,6 +193,39 @@ waitblit:
 ; Return value: None
 warmboot:
 	; jmp	_ccp
+
+; Function 2: Console status
+;
+; Entry parameters:
+;	d0.w: $02
+; Return value:
+;	d0.w: $00ff if ready
+;	d0.w: $0000 if not ready
+constatus:
+	move.w	key_index.l,d0
+	cmp.w	#16,d0
+	bcc	.notready
+	move.l	#$ff,d0
+	rts
+.notready:
+	clr.l	d0
+	rts
+
+; Function 3: Read console character
+;
+; Entry parameters:
+;	d0.w: $03
+; Return value:
+;	d0.w: character
+conin:	bsr	constatus
+	beq	conin
+	move.w	key_index.l,d1
+	and.l	#$ff,d1
+	lea	keyboard_buffer,a0
+	move.b	0(a0,d1),d0
+	add.w	#1,d1
+	move.w	d1,key_index.l
+	rts
 
 ; Function 4: Write console character
 ;
@@ -413,13 +454,72 @@ conout:
 .escy		dc.w	0
 
 keyboard_int:
-	movem.l	d0/a0-a1,-(sp)
+	movem.l	d0-d1/a0-a1,-(sp)
 	lea	CUSTOM,a0
 	eor.w	#$fff,color
 	move.w	color,COLOR1(a0)
 	;move.w	#$00f,COLOR1(a0)
 	; TODO: read scan code from SDR, convert to ASCII and save
 	lea	CIAA,a1
+	move.b	SDR(a1),d0		; read key
+	not.b	d0
+	ror.b	d0
+	bmi	.keyreleased
+	and.l	#$7f,d0
+	cmp.b	#$60,d0
+	bcc	.specialkey
+	lea	keymap,a0
+	lsl.b	#1,d0
+	move.w	left_shift.l,d1
+	or.w	right_shift.l,d1
+	or.w	caps_lock.l,d1
+	cmp.w	#0,d1
+	beq	.noshift
+	move.b	1(a0,d0),d1
+	;movem.l	d0-d1/a0-a1,-(sp)
+	;bsr	conout
+	;movem.l (sp)+,d0-d1/a0-a1
+	bra	.storekey
+.noshift:
+	move.b	0(a0,d0),d1
+	;movem.l	d0-d1/a0-a1,-(sp)
+	;bsr	conout
+	;movem.l (sp)+,d0-d1/a0-a1
+.storekey:
+	move.w	key_index.l,d0
+	bmi	.exit
+	sub.w	#1,d0
+	bmi	.exit			; keyboard buffer full
+	move.w	d0,key_index.l
+	lea	keyboard_buffer,a0
+	move.b	d1,0(a0,d0)
+	bra	.exit
+.specialkey:
+	moveq	#1,d1
+	bra	.specialkey0
+.keyreleased:
+	and.w	#$7f,d0
+	moveq	#0,d1
+.specialkey0:
+	cmp.w	#LEFTSHIFT,d0
+	bne	.specialkey1
+	move.w	#$f00,CUSTOM+COLOR1
+	move.w	d1,left_shift.l
+.specialkey1:
+	cmp.w	#RIGHTSHIFT,d0
+	bne	.specialkey2
+	move.w	#$0f0,CUSTOM+COLOR1
+	move.w	d1,right_shift.l
+.specialkey2:
+	cmp.w	#CAPSLOCK,d0
+	bne	.specialkey3
+	move.w	#$880,CUSTOM+COLOR1
+	move.w	d1,caps_lock.l
+.specialkey3:
+	cmp.w	#CONTROL,d0
+	bne	.exit
+	move.w	d1,ctrl_key.l
+.exit:
 	move.b	ICR(a1),d0		; clear interrupt in CIAA
 
 	; start keyboard ack
@@ -429,9 +529,9 @@ keyboard_int:
 .wait:	btst.b	#0,ICR(a1)		; check timer A interrupt
 	bne	.wait
 	move.b	#0,CRA(a1)		; serial port input
-	
-	move.w	#$0008,INTREQ(a0)	; clear CIA interrupt in Paula
-	movem.l (sp)+,d0/a0-a1
+
+	move.w	#$0008,CUSTOM+INTREQ	; clear CIA interrupt in Paula
+	movem.l (sp)+,d0-d1/a0-a1
 	rte
 
 copper:
@@ -439,7 +539,34 @@ copper:
 	dc.w	$e2,0
 	dc.w	$ffff,$fffe
 color:	dc.w	$00f
-screen:
-	blk.b	640*256*1/8, 0
+key_index:
+	dc.w	16
+keyboard_buffer:
+	blk.b	16
+left_shift:
+	dc.w	0
+right_shift:
+	dc.w	0
+caps_lock:
+	dc.w	0
+ctrl_key:
+	dc.w	0
 font:
 	incbin ../font/topaz128x112x1.raw
+	even
+keymap:
+	dc.b	"`~","1!","2@","3#","4$","5%","6^","7&"
+	dc.b	"8*","9(","0)","-_","=+","\|",0,0,"00"
+	dc.b	"qQ","wW","eE","rR","tT","yY","uU","iI"
+	dc.b	"oO","pP","[{","]}",0,0,"11","22","33"
+	dc.b	"aA","sS","dD","fF","gG","hH","jJ","kK"
+	dc.b	"lL",";:","'",$22,0,0,0,0,"44","55","66"
+	dc.b	0,0,"zZ","xX","cC","vV","bB","nN","mM"
+	dc.b	",<",".>","/?",0,0,"..","77","88","99"
+	dc.b	"  ",$8,$8,$9,$9,$d,$d,$d,$d,$1b,$1b,$7f,$7f,0,0
+	dc.b	0,0,0,0,"--",0,0,$b,$b,$a,$a,$c,$c,$8,$8
+	dc.b	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	dc.b	0,0,0,0,"((","))","//","**","++",0,0
+	even
+screen:
+	;blk.b	640*256*1/8, 0
