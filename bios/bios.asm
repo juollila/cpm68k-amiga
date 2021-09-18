@@ -27,15 +27,28 @@ BPL1MOD	= $108	; Bitplane modulo (odd planes)
 COLOR0	= $180	; Color 0
 COLOR1	= $182	; Color 1
 
-; Constants
+; Keyboard constants
 LEFTSHIFT	= $60
 RIGHTSHIFT	= $61
 CAPSLOCK	= $62
 CONTROL		= $63
+; Screen constants
 COLS		= $50
 ROWS		= $20
 WIDTH		= 640
 HEIGHT		= 256
+; Floppy constants
+CYLINDERS	= 80
+HEADS		= 2
+TRACKS		= CYLINDERS*HEADS
+SECTORSPERTRACK	= 11
+SECTORSIZE	= 512
+TRACKSIZE	= SECTORSPERTRACK*SECTORSIZE
+SECTORS		= TRACKS*SECTORSPERTRACK
+RESERVEDTRACKS	= 6	; 24k (bdos + ccp) + 8k (bios)
+BLOCKSIZE	= 2048	; CPM FS block size
+DIRENTRIES	= 128	; CPM directory entries
+DRIVES		= 2	; Only 2 floppy drives supported (Amiga can support upto 4)
 
 ; CIA base addresses
 CIAA	= $bfe001
@@ -534,11 +547,92 @@ keyboard_int:
 	movem.l (sp)+,d0-d1/a0-a1
 	rte
 
+; Function 5: List character output
+;
+; Entry parameters:
+;	d0.w: $05
+;	d1.w: Character
+; Return value: None
+listchar:
+	rts				; not implemented
+
+; Function 6: Auxiliary output
+;
+; Entry parameters:
+;	d0.w: $06
+;	d1.w: Character
+; Return value:
+;	d0.w: Character
+auxout:
+	rts				; not implemented
+
+; Function 5: Auxiliary input
+;
+; Entry parameters:
+;	d0.w: $07
+;	d1.w: Character
+; Return value:
+;	d0.w: Character
+auxin:
+	rts				; not implemented
+
+; Function : Home
+;
+; Entry parameters:
+;	d0.w: $08
+; Return value: None
+home:
+	moveq	#0,d1
+	bra	settrack
+
+; Function 9: Select disk drive
+;
+; Entry parameters:
+;	d0.w: $09
+;	d1.b: Disk drive
+;	d2.b: Logged in flag
+; Return value:
+;	d0.l: Address of selected drive's DPH
+selectdrive:
+	moveq	#0,d0			; no DPH
+	cmp.b	#0,d1
+	bcs	.exit
+	cmp.b	#DRIVES,d1
+	bcc	.exit
+	and.w	#$f,d1
+	move.w	d1,floppy_drive
+	; TODO: logged in parameter handling
+	move.l	#floppy_dph,d0
+.exit
+	rts
+
+; Function 10: Set track number
+;
+; Entry parameters:
+;	d0.w: $0a
+;	d1.w: Disk track number
+; Return value: None
+settrack:
+	cmp.w	#0,d1
+	bcs	.exit
+	cmp.w	#TRACKS,d1
+	bcc	.exit
+	move.w	d1,floppy_track
+.exit:
+	rts
+	
+
+
+
+
+; copper list
 copper:
 	dc.w	$e0,0
 	dc.w	$e2,0
 	dc.w	$ffff,$fffe
 color:	dc.w	$00f
+
+; keyboard variables
 key_index:
 	dc.w	16
 keyboard_buffer:
@@ -551,9 +645,8 @@ caps_lock:
 	dc.w	0
 ctrl_key:
 	dc.w	0
-font:
-	incbin ../font/topaz128x112x1.raw
-	even
+
+; keymap (raw code to ascii)
 keymap:
 	dc.b	"`~","1!","2@","3#","4$","5%","6^","7&"
 	dc.b	"8*","9(","0)","-_","=+","\|",0,0,"00"
@@ -568,5 +661,48 @@ keymap:
 	dc.b	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 	dc.b	0,0,0,0,"((","))","//","**","++",0,0
 	even
+
+; 8x8 Topaz system font
+font:
+	incbin ../font/topaz128x112x1.raw
+	even
+
+; floppy variables
+floppy_track:
+	dc.w	0
+floppy_drive:
+	dc.w	0
+floppy_dph:
+	dc.l	0			; xlt, no sector translation table
+	dc.w	0			; scratch pad
+	dc.w	0			; scratch pad
+	dc.w	0			; scratch pad
+	dc.l	floppy_dir_buffer	; address of directory buffer
+	dc.l	floppy_dpb		; address of disk parameter block
+	dc.l	floppy_csv		; address of checksum vector
+	dc.l	floppy_alv		; address of scratchpad area
+	
+; floppy disk parameter block
+floppy_dpb:
+	dc.l	TRACKSIZE/128			; spt, 11*512/128=44, number of 128 byte logical sectors per track
+	dc.b	4 				; bsh, block shift factor = 5 when block size = 2048
+	dc.b	15 				; blm, block mask = 15 when block size = 2048
+	dc.b	0				; exm, extent mask = 0 when block size = 2048 and dsm > 255
+	dc.b	0				; reserved
+	dc.w	TRACKS*TRACKSIZE/BLOCKSIZE-1	; dsm, number of last block 160*11*512/2048-1 = 439
+	dc.w	DIRENTRIES-1			; drm, directory entries - 1
+	dc.w	0				; reserved, directory mask?
+	dc.w	DIRENTRIES/4			; cks, size of directory check vector (drm/4)+1
+	dc.w	RESERVEDTRACKS			; off, number of reserved tracks
+; floppy directory buffer
+floppy_dir_buffer
+	blk.b	128,0
+; floppy checksum vector
+floppy_csv:
+	blk.b	DIRENTRIES/4,0
+; floppy scratchpad area
+floppy_alv:
+	blk.b	TRACKS*TRACKSIZE/BLOCKSIZE/8
+; screen buffer
 screen:
 	;blk.b	640*256*1/8, 0
