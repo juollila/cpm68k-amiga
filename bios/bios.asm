@@ -1,3 +1,25 @@
+; CP/M-68k BIOS for Amiga
+;
+; Copyright (c) 2021 Juha Ollila
+; 
+; Permission is hereby granted, free of charge, to any person obtaining a copy
+; of this software and associated documentation files (the "Software"), to deal
+; in the Software without restriction, including without limitation the rights
+; to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+; copies of the Software, and to permit persons to whom the Software is
+; furnished to do so, subject to the following conditions:
+; 
+; The above copyright notice and this permission notice shall be included in all
+; copies or substantial portions of the Software.
+; 
+; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+; IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+; FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+; AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+; LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+; OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+; SOFTWARE.
+
 CUSTOM	= $dff000	; Start of custom chips
 
 ; Custom chip register offsets
@@ -86,16 +108,35 @@ CRB	= $f00	; Control register B
 ; Return value: d0.w: user/disk numbers
 
 _init:	
+	lea	CIAA,a0
+	lea	CIAB,a1
 	lea	CUSTOM,a6
 	bsr	takeover
 	bsr	initscreen
+	bsr	inittimers
 	bsr	initkeyboard
 	bsr	initfloppy
 
+	; clear screen
+	move.w	#$1a,d1
+	bsr	conout
+	; print bios string
 	lea	biosstring(pc),a0
 	bsr	printstring
-	move.l	#$1234ABCD,d0
-	bsr	printlong
+	;move.l	#$1234ABCD,d0
+	;bsr	printlong
+	lea	CIAB,a1
+	move.b	ICR(a1),d0
+	move.w	#$00f,COLOR1(a6)
+	move.b	#$01,CRA(a1)
+	move.b	#$ff,TALO(a1)
+	move.b	#$ff,TAHI(a1)
+	move.b	#$68,CRB(a1)
+	move.b	#108,TBLO(a1)
+	move.b	#0,TBHI(a1)
+.wait:	btst.b	#1,ICR(a1)		; check timer B interrupt
+	beq	.wait
+	move.b	#$000,COLOR1(a6)
 
 	bra	dosomestuff
 
@@ -126,33 +167,35 @@ initscreen:
 	clr.w	COPJMP1(a6)		; jump to copper1 list
 	; enable bit-plane, blitter and copper dma
 	move.w	#$83c0,DMACON(a6)
-	; clear screen
-	move.w	#$1a,d1
-	bsr	conout
+	rts
+
+inittimers:
+	moveq	#0,d0
+	move.b	d0,CRA(a0)		; disable timer A in CIAA
+	move.b	d0,CRB(a0)		; disable timer B in CIAA
+	move.b	d0,CRA(a1)		; disable timer A in CIAB
+	move.b	d0,CRB(a1)		; disable timer B in CIAB
+	move.b	#$7f,d0
+	move.b	d0,ICR(a0)		; disable all interrupts in CIAA
+	move.b	d0,ICR(a1)		; disable all interrupts in CIAB
 	rts
 
 initkeyboard:
-	lea	CIAA,a0
-	move.b	#0,CRA(a0)		; disable timer A
-	move.b	#0,CRB(a0)		; disable timer B
-	move.b	#$7f,ICR(a0)		; clear all interrupts in CIAA
 	move.b	#$88,ICR(a0)		; enable serial port interrupt in CIAA
-	move.b	#$7f,CIAB+ICR		; clear all interrupts in CIAB
 	move.l	#keyboard_int,$68.w	; keyboard interrupt vector to level 2 autovector
-	move.w	#$c008,INTENA(a6)	; enable CIA interrupts
+	move.w	#$c008,INTENA(a6)	; enable CIAA interrupts
 	rts	
 
 initfloppy:
-	lea	CIAA,a0
-	lea	CIAB,a1
-	move.b	#$03,DDRA(a0)		; audio filter & rom overlay are outputs
+	move.b	#$03,DDRA(a0)		; audio filter & rom overlay are outputs (CIAA)
 					; joy0 fire, joy1 fire, drive ready, track 0, write prot & disk change are inputs
-	move.b	#$ff,DDRB(a1)		; motor, sel3, sel2, sel1, sel0, side, dir and step are outputs
+	move.b	#$ff,DDRB(a1)		; motor, sel3, sel2, sel1, sel0, side, dir and step are outputs (CIAB)
 	move.b	#$ff,PRB(a1)		; disable all
 	move.w	#$6200,ADKCON(a6)	; disable precomp1, precomp0 and msbsync
 	move.w	#$9500,ADKCON(a6)	; enable mfmprec, wordsync and fast
 	move.w	#$4489,DSKSYNC(a6)	; set mfm sync mark
 	move.w	#$8010,DMACON(a6)	; enable disk DMA
+
 	rts
 
 ; print string
@@ -317,7 +360,6 @@ conout:
 	subq	#1,d0
 	bne	.loop
 	; update cursor position
-	lea	$dff000,a0
 	move.w	.column,d0
 	addq	#1,d0
 	cmp.b	#80,d0
@@ -415,6 +457,7 @@ conout:
 	; clear screen
 .cls:
 	bsr	waitblit
+	lea	CUSTOM,a0
 	move.l	#screen,BLTDPTH(a0)		; destination address (bltdpth)
 	move.w	#0,BLTDMOD(a0)			; zero modulo (bltdmod)
 	move.w	#0,BLTCON1(a0)			; bltcon1
@@ -425,6 +468,7 @@ conout:
 	; scroll screen buffer
 .scroll:
 	bsr	waitblit
+	lea	CUSTOM,a0
 	move.w	#31,.row
 	move.l	#screen,d0
 	move.l	d0,BLTDPTH(a0)	; destination address (bltdpth)
@@ -500,10 +544,9 @@ conout:
 keyboard_int:
 	movem.l	d0-d1/a0-a1,-(sp)
 	lea	CUSTOM,a0
-	eor.w	#$fff,color
-	move.w	color,COLOR1(a0)
+	;eor.w	#$fff,color
+	;move.w	color,COLOR1(a0)
 	;move.w	#$00f,COLOR1(a0)
-	; TODO: read scan code from SDR, convert to ASCII and save
 	lea	CIAA,a1
 	move.b	SDR(a1),d0		; read key
 	not.b	d0
@@ -547,17 +590,17 @@ keyboard_int:
 .specialkey0:
 	cmp.w	#LEFTSHIFT,d0
 	bne	.specialkey1
-	move.w	#$f00,CUSTOM+COLOR1
+	;move.w	#$f00,CUSTOM+COLOR1
 	move.w	d1,left_shift.l
 .specialkey1:
 	cmp.w	#RIGHTSHIFT,d0
-	bne	.specialkey2
-	move.w	#$0f0,CUSTOM+COLOR1
+	bne	.specialkey2Copyright
+	;move.w	#$0f0,CUSTOM+COLOR1
 	move.w	d1,right_shift.l
 .specialkey2:
 	cmp.w	#CAPSLOCK,d0
 	bne	.specialkey3
-	move.w	#$880,CUSTOM+COLOR1
+	;move.w	#$880,CUSTOM+COLOR1
 	move.w	d1,caps_lock.l
 .specialkey3:
 	cmp.w	#CONTROL,d0
@@ -569,9 +612,9 @@ keyboard_int:
 	; start keyboard ack
 	move.b	#$48,CRA(a1)		; Enable timer A, serial port output
 	move.b	#$71,TALO(a1)		; requirement: min 75 microseconds, but 100 microseconds used
-	move.b	#$00,TAHI(a1)		; 709379 MHz PAL * 0.000100 = 71
+	move.b	#$00,TAHI(a1)		; 709379 Hz PAL * 0.000100 = 71
 .wait:	btst.b	#0,ICR(a1)		; check timer A interrupt
-	bne	.wait
+	beq	.wait
 	move.b	#0,CRA(a1)		; serial port input
 
 	move.w	#$0008,CUSTOM+INTREQ	; clear CIA interrupt in Paula
@@ -675,7 +718,7 @@ copper:
 	dc.w	$e2,0
 	dc.w	$ffff,$fffe
 
-color:	dc.w	$00f
+;color:	dc.w	$00f
 
 ; keyboard variables
 key_index:
@@ -734,7 +777,9 @@ floppy_alv:
 
 ; strings
 biosstring:
-	dc.b	"CP/M-68k BIOS - Coded by Juha Ollila 2021",13,10,0
+	dc.b	"*** CP/M-68k BIOS for Amiga ***",13,10
+        dc.b    "Copyright (c) 2021  Juha Ollila",13,10,0
+	
 	even
 
 ; keymap (raw code to ascii)
