@@ -19,6 +19,7 @@
 ; LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 ; OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 ; SOFTWARE.
+;
 
 CUSTOM	= $dff000	; Start of custom chips
 
@@ -56,11 +57,13 @@ LEFTSHIFT	= $60
 RIGHTSHIFT	= $61
 CAPSLOCK	= $62
 CONTROL		= $63
+
 ; Screen constants
 COLS		= $50
 ROWS		= $20
 WIDTH		= 640
 HEIGHT		= 256
+
 ; Floppy constants
 CYLINDERS	= 80
 HEADS		= 2
@@ -96,9 +99,6 @@ ICR	= $d00	; Interrupt control register
 CRA	= $e00	; Control register A
 CRB	= $f00	; Control register B
 
-
-
-
 	code_c
 
 ; Function 0: Initialization
@@ -125,20 +125,28 @@ _init:
 	bsr	printstring
 	;move.l	#$1234ABCD,d0
 	;bsr	printlong
-	lea	CIAB,a1
-	move.b	ICR(a1),d0
+	;
+	;lea	CIAB,a1
+;	move.b	ICR(a1),d0
+;	move.b	#$01,CRA(a1)
+;	move.b	#$ff,TALO(a1)
+;	move.b	#$ff,TAHI(a1)
+;	move.b	#$68,CRB(a1)
+;	move.b	#108,TBLO(a1)
+;	move.b	#0,TBHI(a1)
+;.wait:	btst.b	#1,ICR(a1)		; check timer B interrupt
+;	beq	.wait
 	move.w	#$00f,COLOR1(a6)
-	move.b	#$01,CRA(a1)
-	move.b	#$ff,TALO(a1)
-	move.b	#$ff,TAHI(a1)
-	move.b	#$68,CRB(a1)
-	move.b	#108,TBLO(a1)
-	move.b	#0,TBHI(a1)
-.wait:	btst.b	#1,ICR(a1)		; check timer B interrupt
-	beq	.wait
+	move.w	#60000,d0		; 60 000 milliseconds
+	bsr	delay
 	move.b	#$000,COLOR1(a6)
 
 	bra	dosomestuff
+
+	; TODO: setting up trap handler, internal variables (e.g. iobyte)
+	; move.l	#traphandler,$8c	; set trap 3 handler
+	clr.l	d0			; login drive A, user 0
+	rts
 
 takeover:
 	; take over system
@@ -264,10 +272,6 @@ dosomestuff:
 	bsr	conout
 	bra	.skip
 
-	; TODO: setting up trap handler, internal variables (e.g. iobyte)
-	; move.l	#traphandler,$8c	; set trap 3 handler
-	clr.l	d0			; login drive A, user 0
-	rts
 
 waitblit:
 	tst.w	CUSTOM+DMACONR
@@ -547,8 +551,8 @@ keyboard_int:
 	;eor.w	#$fff,color
 	;move.w	color,COLOR1(a0)
 	;move.w	#$00f,COLOR1(a0)
-	lea	CIAA,a1
-	move.b	SDR(a1),d0		; read key
+	;lea	CIAA,a1
+	move.b	CIAA+SDR,d0		; read key
 	not.b	d0
 	ror.b	d0
 	bmi	.keyreleased
@@ -594,7 +598,7 @@ keyboard_int:
 	move.w	d1,left_shift.l
 .specialkey1:
 	cmp.w	#RIGHTSHIFT,d0
-	bne	.specialkey2Copyright
+	bne	.specialkey2
 	;move.w	#$0f0,CUSTOM+COLOR1
 	move.w	d1,right_shift.l
 .specialkey2:
@@ -607,6 +611,7 @@ keyboard_int:
 	bne	.exit
 	move.w	d1,ctrl_key.l
 .exit:
+	lea	CIAA,a1
 	move.b	ICR(a1),d0		; clear interrupt in CIAA
 
 	; start keyboard ack
@@ -614,7 +619,7 @@ keyboard_int:
 	move.b	#$71,TALO(a1)		; requirement: min 75 microseconds, but 100 microseconds used
 	move.b	#$00,TAHI(a1)		; 709379 Hz PAL * 0.000100 = 71
 .wait:	btst.b	#0,ICR(a1)		; check timer A interrupt
-	beq	.wait
+	bne	.wait
 	move.b	#0,CRA(a1)		; serial port input
 
 	move.w	#$0008,CUSTOM+INTREQ	; clear CIA interrupt in Paula
@@ -711,6 +716,40 @@ setsector:
 	move.w	d1,floppy_logical
 .exit:
 	rts
+
+;
+; floppy routines
+;
+
+; start timer
+;
+; Entry parameters:
+;	d0.w:	time in milliseconds
+starttimer:
+	lea	CIAB,a1
+	move.b	ICR(a1),d1		; ack CIAB interrupts
+	move.b	#$01,CRA(a1)		; timer A: continuous mode
+	move.b	#$48,CRB(a1)		; timer B: count timer A underflows + one shot mode
+	move.b	#$c5,TALO(a1)		; set timer A count, 2c5 = 709, about 1 milliseconds
+	move.b	#2,TAHI(a1)
+	move.b	d0,TBLO(a1)		; set timer B count
+	lsr.w	#8,d0
+	move.b	d0,TBHI(a1)
+	rts
+
+; delay in milliseconds
+;
+; Entry parameters:
+;	d0.w:	delay in milliseconds
+delay:
+	bsr	starttimer
+.wait:	btst.b	#1,ICR(a1)		; check timer B interrupt
+	beq	.wait
+	rts
+
+;
+; data
+;
 
 ; copper list
 copper:
