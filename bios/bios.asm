@@ -77,6 +77,12 @@ BLOCKSIZE	= 2048	; CPM FS block size
 DIRENTRIES	= 128	; CPM directory entries
 DRIVES		= 2	; Only 2 floppy drives supported (Amiga can support upto 4)
 
+; Offsets in floppy drive structure
+FD_TRACK	= 0
+FD_SIDE		= 2
+FD_SECTOR	= 4
+FD_LOGICAL	= 6
+
 ; CIA base addresses
 CIAA	= $bfe001
 CIAB	= $bfd000
@@ -101,12 +107,13 @@ CRB	= $f00	; Control register B
 
 	code_c
 
+;
 ; Function 0: Initialization
 ;
 ; Entry parameters:
 ;	d0.w: $00
 ; Return value: d0.w: user/disk numbers
-
+;
 _init:	
 	lea	CIAA,a0
 	lea	CIAB,a1
@@ -123,23 +130,38 @@ _init:
 	; print bios string
 	lea	biosstring(pc),a0
 	bsr	printstring
-	;move.l	#$1234ABCD,d0
-	;bsr	printlong
-	;
-	;lea	CIAB,a1
-;	move.b	ICR(a1),d0
-;	move.b	#$01,CRA(a1)
-;	move.b	#$ff,TALO(a1)
-;	move.b	#$ff,TAHI(a1)
-;	move.b	#$68,CRB(a1)
-;	move.b	#108,TBLO(a1)
-;	move.b	#0,TBHI(a1)
-;.wait:	btst.b	#1,ICR(a1)		; check timer B interrupt
-;	beq	.wait
-	move.w	#$00f,COLOR1(a6)
-	move.w	#60000,d0		; 60 000 milliseconds
+	;move.w	#$00f,COLOR1(a6)
+	;move.w	#60000,d0		; 60 000 milliseconds
+	;bsr	delay
+	;move.b	#$000,COLOR1(a6)
+	
+	;move.b	#$fe,d0
+	;moveq	#0,d1
+	;rol.b	d1,d0
+	;bsr	printbyte
+	;move.b	#$fe,d0
+	;moveq	#1,d1
+	;rol.b	d1,d0
+	;bsr	printbyte
+	;move.b	#$fe,d0
+	;moveq	#2,d1
+	;rol.b	d1,d0
+	;bsr	printbyte
+	;move.b	#$fe,d0
+	;moveq	#3,d1
+	;rol.b	d1,d0
+	;bsr	printbyte
+	bsr	fd_deselect
+	move.w	#5000,d0
 	bsr	delay
-	move.b	#$000,COLOR1(a6)
+	moveq	#0,d0
+	bsr	fd_select
+	move.w	#5000,d0
+	bsr	delay
+	bsr	fd_deselect
+
+	
+	
 
 	bra	dosomestuff
 
@@ -206,65 +228,6 @@ initfloppy:
 
 	rts
 
-; print string
-;
-; a0 = address of string
-printstring:
-	move.l	a2,-(sp)
-	move.l	a0,a2
-.loop:
-	move.b	(a2)+,d1
-	beq	.exit
-	bsr	conout
-	bra	.loop
-.exit:
-	move.l	(sp)+,a2
-	rts
-
-; print byte
-;
-; d0.b = byte to print
-printbyte:
-	move.l	d0,-(sp)
-	move.b	d0,d1
-	rol.b	#4,d1
-	and.b	#$f,d1
-	lea	hex(pc),a0
-	move.b	0(a0,d1),d1
-	bsr	conout
-	move.l	(sp)+,d0
-	move.l	d0,-(sp)
-	move.b	d0,d1
-	and.b	#$f,d1
-	lea	hex(pc),a0
-	move.b	0(a0,d1),d1
-	bsr	conout
-	move.l	(sp)+,d0
-	rts
-
-; print word as hex
-;
-; d0.w = word to print
-printword:
-	rol.w	#8,d0
-	bsr	printbyte
-	rol.w	#8,d0
-	bsr	printbyte
-	rts
-
-; print long as hex
-;
-; d0.l = long to print
-printlong:
-	swap	d0
-	bsr	printword
-	swap	d0
-	bsr	printword
-	rts
-
-hex:	dc.b	"0123456789ABCDEF"
-
-
 dosomestuff:
 .skip:
 	bsr	conin
@@ -288,6 +251,7 @@ waitblit:
 warmboot:
 	; jmp	_ccp
 
+;
 ; Function 2: Console status
 ;
 ; Entry parameters:
@@ -295,6 +259,7 @@ warmboot:
 ; Return value:
 ;	d0.w: $00ff if ready
 ;	d0.w: $0000 if not ready
+;
 constatus:
 	move.w	key_index.l,d0
 	cmp.w	#16,d0
@@ -304,13 +269,14 @@ constatus:
 .notready:
 	clr.l	d0
 	rts
-
+;
 ; Function 3: Read console character
 ;
 ; Entry parameters:
 ;	d0.w: $03
 ; Return value:
 ;	d0.w: character
+;
 conin:	bsr	constatus
 	beq	conin
 	move.w	key_index.l,d1
@@ -320,14 +286,14 @@ conin:	bsr	constatus
 	add.w	#1,d1
 	move.w	d1,key_index.l
 	rts
-
+;
 ; Function 4: Write console character
 ;
 ; Entry parameters:
 ;	d0.w: $04
 ;	d1.w: Character
 ; Return value: None
-	
+;
 conout:
 	and.l	#$000000ff,d1	; use only low byte
 	cmp.w	#0,.escseq	; check if esc sequence is ongoing
@@ -494,7 +460,6 @@ conout:
 	move.w	#$100,BLTCON0(a0)		; use D, minterm = none (bltcon0)
 	move.w	#((8<<6)|(80/2)),BLTSIZE(a0)	; height = 8, width = 40 words
 	bsr	waitblit
-	;move.w	#$ffff,screen
 	rts
 
 	; handle escape sequence
@@ -548,10 +513,6 @@ conout:
 keyboard_int:
 	movem.l	d0-d1/a0-a1,-(sp)
 	lea	CUSTOM,a0
-	;eor.w	#$fff,color
-	;move.w	color,COLOR1(a0)
-	;move.w	#$00f,COLOR1(a0)
-	;lea	CIAA,a1
 	move.b	CIAA+SDR,d0		; read key
 	not.b	d0
 	ror.b	d0
@@ -559,7 +520,7 @@ keyboard_int:
 	and.l	#$7f,d0
 	cmp.b	#$60,d0
 	bcc	.specialkey
-	lea	keymap,a0
+	lea	keymap_us,a0
 	lsl.b	#1,d0
 	move.w	left_shift.l,d1
 	or.w	right_shift.l,d1
@@ -567,15 +528,9 @@ keyboard_int:
 	cmp.w	#0,d1
 	beq	.noshift
 	move.b	1(a0,d0),d1
-	;movem.l	d0-d1/a0-a1,-(sp)
-	;bsr	conout
-	;movem.l (sp)+,d0-d1/a0-a1
 	bra	.storekey
 .noshift:
 	move.b	0(a0,d0),d1
-	;movem.l	d0-d1/a0-a1,-(sp)
-	;bsr	conout
-	;movem.l (sp)+,d0-d1/a0-a1
 .storekey:
 	move.w	key_index.l,d0
 	bmi	.exit
@@ -594,17 +549,14 @@ keyboard_int:
 .specialkey0:
 	cmp.w	#LEFTSHIFT,d0
 	bne	.specialkey1
-	;move.w	#$f00,CUSTOM+COLOR1
 	move.w	d1,left_shift.l
 .specialkey1:
 	cmp.w	#RIGHTSHIFT,d0
 	bne	.specialkey2
-	;move.w	#$0f0,CUSTOM+COLOR1
 	move.w	d1,right_shift.l
 .specialkey2:
 	cmp.w	#CAPSLOCK,d0
 	bne	.specialkey3
-	;move.w	#$880,CUSTOM+COLOR1
 	move.w	d1,caps_lock.l
 .specialkey3:
 	cmp.w	#CONTROL,d0
@@ -626,15 +578,18 @@ keyboard_int:
 	movem.l (sp)+,d0-d1/a0-a1
 	rte
 
+;
 ; Function 5: List character output
 ;
 ; Entry parameters:
 ;	d0.w: $05
 ;	d1.w: Character
 ; Return value: None
+;
 listchar:
 	rts				; not implemented
 
+;
 ; Function 6: Auxiliary output
 ;
 ; Entry parameters:
@@ -642,9 +597,11 @@ listchar:
 ;	d1.w: Character
 ; Return value:
 ;	d0.w: Character
+;
 auxout:
 	rts				; not implemented
 
+;
 ; Function 5: Auxiliary input
 ;
 ; Entry parameters:
@@ -652,18 +609,22 @@ auxout:
 ;	d1.w: Character
 ; Return value:
 ;	d0.w: Character
+;
 auxin:
 	rts				; not implemented
 
+;
 ; Function : Home
 ;
 ; Entry parameters:
 ;	d0.w: $08
 ; Return value: None
+;
 home:
 	moveq	#0,d1
 	bra	settrack
 
+;
 ; Function 9: Select disk drive
 ;
 ; Entry parameters:
@@ -672,6 +633,7 @@ home:
 ;	d2.b: Logged in flag
 ; Return value:
 ;	d0.l: Address of selected drive's DPH
+;
 selectdrive:
 	moveq	#0,d0			; no DPH
 	cmp.b	#0,d1
@@ -679,46 +641,229 @@ selectdrive:
 	cmp.b	#DRIVES,d1
 	bcc	.exit
 	and.w	#$f,d1
-	move.w	d1,floppy_drive
+	move.w	d1,fd_drive
 	; TODO: logged in parameter handling
 	move.l	#floppy_dph,d0
 .exit
 	rts
 
+;
 ; Function 10: Set track number
 ;
 ; Entry parameters:
 ;	d0.w: $0a
 ;	d1.w: Disk track number
 ; Return value: None
+;
 settrack:
 	cmp.w	#0,d1
 	bcs	.exit
 	cmp.w	#TRACKS,d1
 	bcc	.exit
-	move.w	d1,floppy_track
+	lea	fd_drive_table,a0
+	move.w	fd_drive,d0
+	move.l	(a0,d0.w),a0
+	move.w	d1,FD_TRACK(a0)
 .exit:
 	rts
 
+;
 ; Function 11: Set logical sector number
 ;
 ; Entry parameters:
 ;	d0.w: $0b
 ;	d1.w: Logical sector number
 ; Return value: None
+;
 setsector:
+	lea	fd_drive_table,a0
+	move.w	fd_drive,d0
+	move.l	(a0,d0.w),a0
 	move.w	d1,d0
 	bmi	.exit
 	lsr.w	#2,d0		; divide by 4, one sector contains 4 CP/M logical sectors
 	cmp.w	#SECTORS,d0
 	bcc	.exit
-	move.w	d0,floppy_sector
-	move.w	d1,floppy_logical
+	move.w	d0,FD_SECTOR(a0)
+	move.w	d1,FD_LOGICAL(a0)
 .exit:
 	rts
 
 ;
-; floppy routines
+; disk routines
+;
+
+;
+; Select floppy drive
+;
+; Entry parameters:
+;	d0.w: drive
+; Return value: None
+;
+fd_select:
+	move.w	fd_drive,d1
+	cmp.w	d0,d1
+	beq	.fd_select1
+	clr.w	fd_cache_ok
+.fd_select1:
+	move.w	d0,fd_drive
+	and.b	#$7f,CIAB+PRB	; motor on
+	move.b	#$f7,d1		; select drive
+	rol.b	d0,d1
+	and.b	d1,CIAB+PRB
+	rts
+
+;
+; Deselect all floppy drives
+;
+; Entry parameters: None
+; Return parameters: None
+;
+fd_deselect:
+	or.b	#$78,CIAB+PRB	; deselect all drives
+	or.b	#$80,CIAB+PRB	; motor off
+	move.b	fd_drive,d0	; select drive, selected drive's motor will be off
+	move.b	#$f7,d1
+	rol.b	d0,d1
+	and.b	d1,CIAB+PRB
+	or.b	#$78,CIAB+PRB	; deselect all drives
+	rts
+
+;
+; Select floppy side
+;
+; Entry parameters:
+;	d0.w: side
+; Return parameters: None
+;
+fd_set_side:
+	cmp.w	#0,d0
+	beq	.side0
+	and.b	#$fb,CIAB+PRB
+	bra	.exit
+.side0	or.b	#$4,CIAB+PRB
+.exit:	lea	fd_drive_table,a0
+	move.w	fd_drive,d1
+	move.l	(a0,d1.w),a0
+	move.b	d0,FD_SIDE(a0)
+	rts
+
+;
+; Check if track zero
+;
+; Entry parameters: None
+; Return parameters: zero flag set if track zero
+;
+fd_track_zero:
+	move.b	CIAA+PRA,d0
+	and.b	#$10,d0
+	rts
+
+;
+; Check if disk change
+;
+; Entry parameters: None
+; Return parameters: zero flag set if disk changed
+;
+fd_disk_change:
+	move.b	CIAA+PRA,d0
+	and.b	#$04,d0
+	rts
+
+fd_step_direction:
+	rts
+
+fd_step:
+	rts
+
+fd_sync:
+	rts
+
+fd_detect_drive:
+	rts
+
+fd_seek:
+	rts
+
+fd_rw_track:
+	rts
+
+fd_decode_mfm:
+	rts
+
+fd_decode_mfm_word:
+	rts
+
+fd_decode_track:
+	rts
+
+fd_encode_track:
+	rts
+
+;
+; print routines
+;
+
+; print string
+;
+; a0 = address of string
+printstring:
+	move.l	a2,-(sp)
+	move.l	a0,a2
+.loop:
+	move.b	(a2)+,d1
+	beq	.exit
+	bsr	conout
+	bra	.loop
+.exit:
+	move.l	(sp)+,a2
+	rts
+
+; print byte as hex
+;
+; d0.b = byte to print
+printbyte:
+	move.l	d0,-(sp)
+	move.b	d0,d1
+	rol.b	#4,d1
+	and.b	#$f,d1
+	lea	hex(pc),a0
+	move.b	0(a0,d1),d1
+	bsr	conout
+	move.l	(sp)+,d0
+	move.l	d0,-(sp)
+	move.b	d0,d1
+	and.b	#$f,d1
+	lea	hex(pc),a0
+	move.b	0(a0,d1),d1
+	bsr	conout
+	move.l	(sp)+,d0
+	rts
+
+; print word as hex
+;
+; d0.w = word to print
+printword:
+	rol.w	#8,d0
+	bsr	printbyte
+	rol.w	#8,d0
+	bsr	printbyte
+	rts
+
+; print long as hex
+;
+; d0.l = long to print
+printlong:
+	swap	d0
+	bsr	printword
+	swap	d0
+	bsr	printword
+	rts
+
+hex:	dc.b	"0123456789ABCDEF"
+
+;
+; timer routines
 ;
 
 ; start timer
@@ -774,14 +919,37 @@ ctrl_key:
 	dc.w	0
 
 ; floppy variables
-floppy_track:
+fd_drive:
 	dc.w	0
-floppy_drive:
+fd_cache_ok:
 	dc.w	0
-floppy_sector:
-	dc.w	0
-floppy_logical:
-	dc.w	0
+fd_drive_table:
+	dc.l	df0
+	dc.l	df1
+	dc.l	df2
+	dc.l	df3
+df0:
+	dc.w	0	; track
+	dc.w	0	; side
+	dc.w	0	; sector
+	dc.w	0	; cp/m logical sector
+df1:
+	dc.w	0	; track
+	dc.w	0	; side
+	dc.w	0	; sector
+	dc.w	0	; cp/m logical sector
+df2:
+	dc.w	0	; track
+	dc.w	0	; side
+	dc.w	0	; sector
+	dc.w	0	; cp/m logical sector
+df3:
+	dc.w	0	; track
+	dc.w	0	; side
+	dc.w	0	; sector
+	dc.w	0	; cp/m logical sector
+
+; floppy disk parameter header
 floppy_dph:
 	dc.l	0			; xlt, no sector translation table
 	dc.w	0			; scratch pad
@@ -822,7 +990,7 @@ biosstring:
 	even
 
 ; keymap (raw code to ascii)
-keymap:
+keymap_us:
 	dc.b	"`~","1!","2@","3#","4$","5%","6^","7&"
 	dc.b	"8*","9(","0)","-_","=+","\|",0,0,"00"
 	dc.b	"qQ","wW","eE","rR","tT","yY","uU","iI"
@@ -842,6 +1010,9 @@ font:
 	incbin ../font/topaz128x112x1.raw
 	even
 
+sector_data:
+mfm_track = sector_data + (11*512)
+	; bytes 13630
 ; screen buffer (requires 20kB)
-screen:
+screen = mfm_track + 13630
 	;blk.b	640*256*1/8, 0
