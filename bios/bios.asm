@@ -717,7 +717,7 @@ fd_select:
 ; Deselect all floppy drives
 ;
 ; Entry parameters: None
-; Return parameters: None
+; Return value: None
 ;
 fd_deselect:
 	or.b	#$78,CIAB+PRB	; deselect all drives
@@ -734,7 +734,7 @@ fd_deselect:
 ;
 ; Entry parameters:
 ;	d0.w: side
-; Return parameters: None
+; Return value: None
 ;
 fd_set_side:
 	cmp.w	#0,d0
@@ -752,7 +752,7 @@ fd_set_side:
 ; Check if track zero
 ;
 ; Entry parameters: None
-; Return parameters: zero flag set if track zero
+; Return value: zero flag set if track zero
 ;
 fd_track_zero:
 	move.b	CIAA+PRA,d0
@@ -763,14 +763,38 @@ fd_track_zero:
 ; Check if disk change
 ;
 ; Entry parameters: None
-; Return parameters: zero flag set if disk changed
+; Return value: zero flag set if disk changed
 ;
 fd_disk_change:
 	move.b	CIAA+PRA,d0
 	and.b	#$04,d0
 	rts
 
+;
+; Set step direction
+;
+; Entry parameters:
+;	d0.w: 0=forward, 1=backward
+; Return value: None
+;
 fd_step_direction:
+	move.b	CIAB+PRB,d1	; previous direction
+	and.b	#$02,d1
+	beq	.checkdir1	; branch if prev dir = forward
+	bne	.checkdir2	; branch if prev dir = backward
+.checkdir1:			; prev dir = forward
+	and.b	#$01,d0
+	beq	.exit		; branch if new dir = forward
+	or.b	#$02,CIAB+PRB	; set direction backward
+	bra	.delay18ms
+.checkdir2:			; prev dir = backward
+	and.b	#$01,d0
+	bne	.exit		; branch if new dir = backward
+	and.b	#$02,CIAB+PRB	; set direction forward
+.delay18ms:
+	move.w	#18,d0
+	bsr	delay
+.exit:
 	rts
 
 fd_step:
