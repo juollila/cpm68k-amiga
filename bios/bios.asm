@@ -661,7 +661,7 @@ settrack:
 	cmp.w	#TRACKS,d1
 	bcc	.exit
 	lea	fd_drive_table,a0
-	move.w	fd_drive,d0
+	move.w	fd_drive,d0	; TODO: bug? d1 should be multiplied by two?
 	move.l	(a0,d0.w),a0
 	move.w	d1,FD_TRACK(a0)
 .exit:
@@ -678,7 +678,7 @@ settrack:
 setsector:
 	lea	fd_drive_table,a0
 	move.w	fd_drive,d0
-	move.l	(a0,d0.w),a0
+	move.l	(a0,d0.w),a0	; TODO: bug? d1 should be multiplied by two?
 	move.w	d1,d0
 	bmi	.exit
 	lsr.w	#2,d0		; divide by 4, one sector contains 4 CP/M logical sectors
@@ -743,7 +743,7 @@ fd_set_side:
 	bra	.exit
 .side0	or.b	#$4,CIAB+PRB
 .exit:	lea	fd_drive_table,a0
-	move.w	fd_drive,d1
+	move.w	fd_drive,d1	; TODO: bug? d1 should be multiplied by two?
 	move.l	(a0,d1.w),a0
 	move.b	d0,FD_SIDE(a0)
 	rts
@@ -797,7 +797,30 @@ fd_step_direction:
 .exit:
 	rts
 
+;
+; Move (step) one track
+;
+; Entry parameters: None
+; Return value: None
+;
 fd_step:
+	and.b	#$fe,CIAB+PRB
+	or.b	#$01,CIAB+PRB
+.delay3ms:
+	move.w	#3,d0
+	bsr	delay
+	; update track number
+	lea	fd_drive_table,a0	; get old track number
+	move.w	fd_drive,d1		; TODO: bug? d1 should be multiplied by two?
+	move.l	(a0,d1.w),a0
+	move.b	FD_TRACK(a0),d0
+	move.b	CIAB+PRB,d1	; get current direction
+	and.b	#$02,d1		; update track number
+	beq	.add
+	subq	#1,d0
+	bra	.store
+.add:	addq	#1,d0
+.store:	move.b	d1,FD_TRACK(a0)	
 	rts
 
 fd_sync:
