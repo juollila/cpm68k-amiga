@@ -151,16 +151,36 @@ _init:
 	;moveq	#3,d1
 	;rol.b	d1,d0
 	;bsr	printbyte
-	bsr	fd_deselect
-	move.w	#5000,d0
-	bsr	delay
-	moveq	#0,d0
-	bsr	fd_select
-	move.w	#5000,d0
-	bsr	delay
-	bsr	fd_deselect
 
+	; select & deselect debugging
+	;bsr	fd_deselect
+	;move.w	#5000,d0
+	;bsr	delay
+	;moveq	#0,d0
+	;bsr	fd_select
+	;move.w	#5000,d0
+	;bsr	delay
+	;bsr	fd_deselect
+
+	;	d1.b: Disk drive
+;	d2.b: Logged in flag
+	moveq	#1,d1
+	bsr	selectdrive
+
+	moveq	#5,d1
+	bsr	settrack
 	
+	lea	fd_drive,a0
+	clr.w	d1
+.loop:	move.l	(a0,d1.w),d0
+	bsr	printlong
+	move.b	#13,d0
+	bsr	printchar
+	move.b	#10,d0
+	bsr	printchar
+	addq.w	#4,d1
+	cmp.w	#56,d1
+	bne	.loop
 	
 
 	bra	dosomestuff
@@ -331,7 +351,7 @@ conout:
 	bne	.loop
 	; update cursor position
 	move.w	.column,d0
-	addq	#1,d0
+	addq.w	#1,d0
 	cmp.b	#80,d0
 	bne	.noteol
 	bsr	.boline
@@ -380,7 +400,7 @@ conout:
 	; new line
 .cursordown:
 	move.w	.row,d0
-	addq	#1,d0
+	addq.w	#1,d0
 	cmp.b	#32,d0
 	beq	.scroll
 	move.w	d0,.row
@@ -661,7 +681,8 @@ settrack:
 	cmp.w	#TRACKS,d1
 	bcc	.exit
 	lea	fd_drive_table,a0
-	move.w	fd_drive,d0	; TODO: bug? d1 should be multiplied by two?
+	move.w	fd_drive,d0
+	lsl.w	#2,d0
 	move.l	(a0,d0.w),a0
 	move.w	d1,FD_TRACK(a0)
 .exit:
@@ -678,7 +699,8 @@ settrack:
 setsector:
 	lea	fd_drive_table,a0
 	move.w	fd_drive,d0
-	move.l	(a0,d0.w),a0	; TODO: bug? d1 should be multiplied by two?
+	lsl.w	#2,d0
+	move.l	(a0,d0.w),a0
 	move.w	d1,d0
 	bmi	.exit
 	lsr.w	#2,d0		; divide by 4, one sector contains 4 CP/M logical sectors
@@ -743,7 +765,8 @@ fd_set_side:
 	bra	.exit
 .side0	or.b	#$4,CIAB+PRB
 .exit:	lea	fd_drive_table,a0
-	move.w	fd_drive,d1	; TODO: bug? d1 should be multiplied by two?
+	move.w	fd_drive,d1
+	lsl.w	#2,d1
 	move.l	(a0,d1.w),a0
 	move.b	d0,FD_SIDE(a0)
 	rts
@@ -811,22 +834,61 @@ fd_step:
 	bsr	delay
 	; update track number
 	lea	fd_drive_table,a0	; get old track number
-	move.w	fd_drive,d1		; TODO: bug? d1 should be multiplied by two?
+	move.w	fd_drive,d1
+	lsl.w	#2,d1
 	move.l	(a0,d1.w),a0
 	move.b	FD_TRACK(a0),d0
 	move.b	CIAB+PRB,d1	; get current direction
-	and.b	#$02,d1		; update track number
+	and.w	#$02,d1		; update track number
 	beq	.add
-	subq	#1,d0
+	subq.w	#1,d0
 	bra	.store
-.add:	addq	#1,d0
+.add:	addq.w	#1,d0
 .store:	move.b	d1,FD_TRACK(a0)	
 	rts
 
+;
+; Resynchronize floppy drive
+;
+; Entry parameters: None
+; Return value: zero flag set if successful
+
 fd_sync:
+	clr.w	fd_cache_ok		; set cache is not OK
+	bsr	fd_track_zero
+	bne	.skip
+	move.w	#0,d0			; go forward one step if in track zero
+	bsr	fd_step_direction
+	bsr	fd_step
+.skip:	move.w	#1,d0
+	bsr	fd_step_direction
+	move.l	d2,-(sp)
+	clr.w	d2			; a number of steps
+.loop:					; step track until track zero is reached
+	bsr	fd_track_zero
+	beq	exit
+	bsr	fd_step
+	addq.w	#1,d2
+	cmp.w	#CYLINDERS+15,d2
+	bne	loop
+.fail:	move.l	(sp)+,d2
+	or.w	#1,d0			; clear zero flag i.e. error
+	rts
+.exit:
+	lea	fd_drive_table,a0	; set current track to zero
+	move.w	fd_drive,d1
+	lsl.w	#2,d1
+	move.l	(a0,d1.w),a0
+	move.w	#0,FD_TRACK(a0)
+	move.l	(sp)+,d2
+.delay15ms:
+	move.w	#15,d0
+	bsr	delay
+	clr.w	d0			; set zero flag i.e. track zero was found
 	rts
 
 fd_detect_drive:
+
 	rts
 
 fd_seek:
@@ -855,7 +917,7 @@ fd_encode_track:
 ;
 ; a0 = address of string
 printstring:
-	move.l	a2,-(sp)
+	movem.l	d0-d1/a0-a2,-(sp)
 	move.l	a0,a2
 .loop:
 	move.b	(a2)+,d1
@@ -863,14 +925,25 @@ printstring:
 	bsr	conout
 	bra	.loop
 .exit:
-	move.l	(sp)+,a2
+	movem.l	(sp)+,d0-d1/a0-a2
+	rts
+
+; print a character
+; does not change any registers
+;
+; d0.b = char to print
+printchar:
+	movem.l	d0-d1/a0-a1,-(sp)
+	move.b	d0,d1
+	bsr	conout
+	movem.l	(sp)+,d0-d1/a0-a1
 	rts
 
 ; print byte as hex
 ;
 ; d0.b = byte to print
 printbyte:
-	move.l	d0,-(sp)
+	movem.l	d0-d1/a0-a1,-(sp)
 	move.b	d0,d1
 	rol.b	#4,d1
 	and.b	#$f,d1
@@ -884,27 +957,31 @@ printbyte:
 	lea	hex(pc),a0
 	move.b	0(a0,d1),d1
 	bsr	conout
-	move.l	(sp)+,d0
+	movem.l	(sp)+,d0-d1/a0-a1
 	rts
 
 ; print word as hex
 ;
 ; d0.w = word to print
 printword:
+	move.l	d0,-(sp)
 	rol.w	#8,d0
 	bsr	printbyte
 	rol.w	#8,d0
 	bsr	printbyte
+	move.l	(sp)+,d0
 	rts
 
 ; print long as hex
 ;
 ; d0.l = long to print
 printlong:
+	move.l	d0,-(sp)
 	swap	d0
 	bsr	printword
 	swap	d0
 	bsr	printword
+	move.l	(sp)+,d0
 	rts
 
 hex:	dc.b	"0123456789ABCDEF"
@@ -996,6 +1073,8 @@ df3:
 	dc.w	0	; sector
 	dc.w	0	; cp/m logical sector
 
+	dc.w	$2BAD
+
 ; floppy disk parameter header
 floppy_dph:
 	dc.l	0			; xlt, no sector translation table
@@ -1032,7 +1111,7 @@ floppy_alv:
 ; strings
 biosstring:
 	dc.b	"*** CP/M-68k BIOS for Amiga ***",13,10
-        dc.b    "Copyright (c) 2021  Juha Ollila",13,10,0
+        dc.b    "** Coded by Juha Ollila 2021 **",13,10,0
 	
 	even
 
