@@ -833,11 +833,12 @@ fd_step:
 	move.w	#3,d0
 	bsr	delay
 	; update track number
-	lea	fd_drive_table,a0	; get old track number
-	move.w	fd_drive,d1
-	lsl.w	#2,d1
-	move.l	(a0,d1.w),a0
-	move.b	FD_TRACK(a0),d0
+	;lea	fd_drive_table,a0	; get old track number
+	;move.w	fd_drive,d1
+	;lsl.w	#2,d1
+	;move.l	(a0,d1.w),a0
+	;move.w	FD_TRACK(a0),d0
+	bsr	fd_get_current_track
 	move.b	CIAB+PRB,d1	; get current direction
 	and.w	#$02,d1		; update track number
 	beq	.add
@@ -866,11 +867,11 @@ fd_sync:
 	clr.w	d2			; a number of steps
 .loop:					; step track until track zero is reached
 	bsr	fd_track_zero
-	beq	exit
+	beq	.exit
 	bsr	fd_step
 	addq.w	#1,d2
 	cmp.w	#CYLINDERS+15,d2
-	bne	loop
+	bne	.loop
 .fail:	move.l	(sp)+,d2
 	or.w	#1,d0			; clear zero flag i.e. error
 	rts
@@ -887,11 +888,47 @@ fd_sync:
 	clr.w	d0			; set zero flag i.e. track zero was found
 	rts
 
-fd_detect_drive:
+;fd_detect_drive:
+;	rts
 
+; Get current track
+;
+; Entry parameters: None
+; Return values: d0.w track
+;                a0 address of drive structure
+fd_get_current_track:
+	lea	fd_drive_table,a0	; get current track number
+	move.w	fd_drive,d1
+	lsl.w	#2,d1
+	move.l	(a0,d1.w),a0
+	move.w	FD_TRACK(a0),d0
 	rts
 
+; Seek track
+;
+; Entry parameters: d0.w track
+; Return value: zero flag set if successful
 fd_seek:
+	movem.l	d2-d3,-(sp)
+	move.w	d0,d2			; track number
+	bsr	fd_get_current_track
+	move.w	d2,d3			; track
+	sub.w	d3,d0			; offset = track - current track
+	beq	.exit			; exit if offset is zero
+	bcs	.neg			; offset < 0
+	clr.w	d0			; step forward
+	bra	.setdir
+.neg:	moveq	#1,d0			; step backward
+.setdir:
+	bsr	fd_step_direction
+.loop:
+	bsr	fd_get_current_track	; exit if current track = track
+	cmp.w	d0,d2
+	beq	.exit
+	bsr	fd_step
+	bra	.loop
+.exit:	clr.w	d0			; set zero flag
+	movem.l	(sp)+,d2-d3
 	rts
 
 fd_rw_track:
