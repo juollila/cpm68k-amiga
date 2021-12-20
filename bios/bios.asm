@@ -931,6 +931,26 @@ fd_seek:
 	movem.l	(sp)+,d2-d3
 	rts
 
+; wait motor on
+;
+; Entry parameters: None
+; Return value: zero flag set if successful
+fd_wait_motor:
+	move.w	#500			; 500 milliseconds timeout
+	bsr	starttimer
+.wait:	btst.b	#5,CIAA+PRA
+	beq	.exit 
+	btst.b	#1,CIAB+ICR		; check timer B interrupt
+	beq	.wait
+	moveq	#1,d0			; clear zero flag
+	rts
+.exit:
+	clr.b	CIAB+CRA		; disable timer A in CIAB
+	clr.b	CIAB+CRB		; disable timer B in CIAB
+	move.b	#$7f,CIAB+ICR		; disable all interrupts in CIAB
+	clr.w	d0			; set zero flag
+	rts
+
 fd_rw_track:
 	rts
 
@@ -1052,6 +1072,7 @@ delay:
 .wait:	btst.b	#1,ICR(a1)		; check timer B interrupt
 	beq	.wait
 	rts
+
 
 ;
 ; data
