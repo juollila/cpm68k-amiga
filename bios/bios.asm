@@ -951,7 +951,33 @@ fd_wait_motor:
 	clr.w	d0			; set zero flag
 	rts
 
+; wait disk dma
+;
+; Entry parameters: None
+; Return value: zero flag set if successful
+fd_wait_dma:
+	move.w	#1000			; 1000 milliseconds timeout
+	bsr	starttimer
+.wait:	btst.b	#5,CIAA+PRA		; TODO: Update with dma check
+	beq	.exit 
+	btst.b	#1,CIAB+ICR		; check timer B interrupt
+	beq	.wait
+	moveq	#1,d0			; clear zero flag
+	rts
+.exit:
+	clr.b	CIAB+CRA		; disable timer A in CIAB
+	clr.b	CIAB+CRB		; disable timer B in CIAB
+	move.b	#$7f,CIAB+ICR		; disable all interrupts in CIAB
+	clr.w	d0			; set zero flag
+	rts
+
 fd_rw_track:
+	bsr	fd_wait_motor		; check that motor is on
+	beq	.ok1
+	lea	motorerror(pc),a0
+	bsr	printstring
+	rts
+.ok1:
 	rts
 
 fd_decode_mfm:
@@ -1170,7 +1196,10 @@ floppy_alv:
 biosstring:
 	dc.b	"*** CP/M-68k BIOS for Amiga ***",13,10
         dc.b    "** Coded by Juha Ollila 2021 **",13,10,0
-	
+motorerror:
+	dc.b	13,10,"Drive not ready",13,10,0
+dmaerror:
+	dc.b	13,10,"Disk DMA timeout",13,10,0
 	even
 
 ; keymap (raw code to ascii)
