@@ -25,6 +25,9 @@ CUSTOM	= $dff000	; Start of custom chips
 
 ; Custom chip register offsets
 DMACONR = $002	; DMA control read
+INTREQR = $01e  ; Interrupt request bits read
+DSKPTH	= $020	; Disk track buffer pointer (high)
+DSKLEN	= $024	; Disk track buffer length
 BLTCON0 = $040	; Blitter control register 0
 BLTCON1 = $042	; Blitter control register 1
 BLTAFWM	= $044	; Blitter first word mask for source A
@@ -76,6 +79,7 @@ RESERVEDTRACKS	= 6	; boot loader + 24k (bdos + ccp) + 8k (bios)
 BLOCKSIZE	= 2048	; CPM FS block size
 DIRENTRIES	= 128	; CPM directory entries
 DRIVES		= 2	; Only 2 floppy drives supported (Amiga can support upto 4)
+MFM_TRACKSIZE	= 13630 ; MFM track size
 
 ; Offsets in floppy drive structure
 FD_TRACK	= 0
@@ -164,23 +168,61 @@ _init:
 
 	;	d1.b: Disk drive
 ;	d2.b: Logged in flag
-	moveq	#1,d1
-	bsr	selectdrive
 
-	moveq	#5,d1
-	bsr	settrack
-	
-	lea	fd_drive,a0
-	clr.w	d1
-.loop:	move.l	(a0,d1.w),d0
+
+	bsr	fd_deselect
+	moveq	#0,d0
+	bsr	fd_select
+	bsr	fd_sync
+	moveq	#0,d0
+	bsr	fd_set_side
+	moveq	#0,d0
+	bsr	fd_seek
+
+	move.l	#sector_data,d0
 	bsr	printlong
-	move.b	#13,d0
-	bsr	printchar
-	move.b	#10,d0
-	bsr	printchar
-	addq.w	#4,d1
-	cmp.w	#56,d1
-	bne	.loop
+	bsr	printcr
+	move.l	#mfm_track,d0
+	bsr	printlong
+	bsr	printcr
+	move.l	#screen,d0
+	bsr	printlong
+	bsr	printcr
+	move.w	#$4000,d0
+
+	bsr	fd_rw_track
+
+	move.l	#sector_data,d0
+	bsr	printlong
+	bsr	printcr
+	move.l	#mfm_track,d0
+	bsr	printlong
+	bsr	printcr
+	move.l	#screen,d0
+	bsr	printlong
+	bsr	printcr
+
+	lea	mfm_track,a0
+	clr.w	d1
+.loop:	move.w	(a0,d1.w),d0
+	bsr	printword
+	bsr	printcr
+	addq.w	#2,d1
+	cmp.w	#32,d1
+	bne	.loop	
+
+
+;	lea	fd_drive,a0
+;	clr.w	d1
+;.loop:	move.l	(a0,d1.w),d0
+;	bsr	printlong
+;	move.b	#13,d0
+;	bsr	printchar
+;	move.b	#10,d0
+;	bsr	printchar
+;	addq.w	#4,d1
+;	cmp.w	#56,d1
+;	bne	.loop
 	
 
 	bra	dosomestuff
@@ -711,6 +753,18 @@ setsector:
 .exit:
 	rts
 
+; Function 12 Set DMA address: Not started
+; Function 13 Read sector: Not started
+; Function 14 Write sector: Not started
+; Function 15 Return list status: Not needed at first phase
+; Function 16 Sector translate: Not started
+; Function 17 ?: Missing from CP/M-68k
+; Function 18 Get address of memory region table: Not started
+; Function 19 Get I/O byte: Not needed at first phase
+; Function 20 Set I/O byte: Not needed at first phase
+; Function 21 Flush buffers: Not started (will be dummy function)
+; Function 22 Set exception handler address: Not started
+
 ;
 ; disk routines
 ;
@@ -936,7 +990,7 @@ fd_seek:
 ; Entry parameters: None
 ; Return value: zero flag set if successful
 fd_wait_motor:
-	move.w	#500			; 500 milliseconds timeout
+	move.w	#500,d0			; 500 milliseconds timeout
 	bsr	starttimer
 .wait:	btst.b	#5,CIAA+PRA
 	beq	.exit 
@@ -956,10 +1010,11 @@ fd_wait_motor:
 ; Entry parameters: None
 ; Return value: zero flag set if successful
 fd_wait_dma:
-	move.w	#1000			; 1000 milliseconds timeout
+	move.w	#1000,d0		; 1000 milliseconds timeout
 	bsr	starttimer
-.wait:	btst.b	#5,CIAA+PRA		; TODO: Update with dma check
-	beq	.exit 
+.wait:	move.w	CUSTOM+INTREQR,d0
+	and.b	#2,d0			; check disk block finished interrupt
+	bne	.exit 
 	btst.b	#1,CIAB+ICR		; check timer B interrupt
 	beq	.wait
 	moveq	#1,d0			; clear zero flag
@@ -971,6 +1026,10 @@ fd_wait_dma:
 	clr.w	d0			; set zero flag
 	rts
 
+; read/write track
+;
+; Entry parameters: d0.w ($4000=write, 0=read)
+; Return value: None
 fd_rw_track:
 	bsr	fd_wait_motor		; check that motor is on
 	beq	.ok1
@@ -978,6 +1037,25 @@ fd_rw_track:
 	bsr	printstring
 	rts
 .ok1:
+	move.w	#$4000,CUSTOM+DSKLEN	; dma disable + read
+	lea	mfm_track(pc),a1	; set buffer address
+	move.l	a1,CUSTOM+DSKPTH
+	move.w	#($8000+(MFM_TRACKSIZE/2)),d1	; dma enable + buffer size in words
+	or.w	#$0000,d1			; set read TODO: add write support
+	move.w	d1,d0
+	bsr	printword
+	bsr	printcr
+	move.w	d1,CUSTOM+DSKLEN	; transfer is triggered by writing reg twice
+	move.w	d1,CUSTOM+DSKLEN
+	bsr	fd_wait_dma
+	beq	.ok2
+	lea	dmaerror(pc),a0
+	bsr	printstring
+	move.w	#$4000,CUSTOM+DSKLEN	; dma disable + read
+	rts
+.ok2:
+	move.w	#$4000,CUSTOM+DSKLEN	; dma disable + read
+	move.w	#2,CUSTOM+INTREQ	; clear disk dma interrupt
 	rts
 
 fd_decode_mfm:
@@ -1011,6 +1089,18 @@ printstring:
 	movem.l	(sp)+,d0-d1/a0-a2
 	rts
 
+; print cr+lf
+;
+;
+printcr:
+	move.l	d0,-(sp)
+	move.b	#13,d0
+	bsr	printchar
+	move.b	#10,d0
+	bsr	printchar
+	move.l	(sp)+,d0
+	rts
+
 ; print a character
 ; does not change any registers
 ;
@@ -1027,18 +1117,19 @@ printchar:
 ; d0.b = byte to print
 printbyte:
 	movem.l	d0-d1/a0-a1,-(sp)
+	clr.w	d1
 	move.b	d0,d1
 	rol.b	#4,d1
 	and.b	#$f,d1
 	lea	hex(pc),a0
-	move.b	0(a0,d1),d1
+	move.b	0(a0,d1.w),d1
 	bsr	conout
 	move.l	(sp)+,d0
 	move.l	d0,-(sp)
 	move.b	d0,d1
-	and.b	#$f,d1
+	and.w	#$f,d1
 	lea	hex(pc),a0
-	move.b	0(a0,d1),d1
+	move.b	0(a0,d1.w),d1
 	bsr	conout
 	movem.l	(sp)+,d0-d1/a0-a1
 	rts
@@ -1157,7 +1248,6 @@ df3:
 	dc.w	0	; sector
 	dc.w	0	; cp/m logical sector
 
-	dc.w	$2BAD
 
 ; floppy disk parameter header
 floppy_dph:
@@ -1194,12 +1284,14 @@ floppy_alv:
 
 ; strings
 biosstring:
-	dc.b	"*** CP/M-68k BIOS for Amiga ***",13,10
-        dc.b    "** Coded by Juha Ollila 2021 **",13,10,0
+	dc.b	"*** CP/M-68k BIOS for Commodore Amiga ***",13,10
+        dc.b    "**** Coded by Juha Ollila  2021-2022 ****",13,10,0
 motorerror:
 	dc.b	13,10,"Drive not ready",13,10,0
 dmaerror:
 	dc.b	13,10,"Disk DMA timeout",13,10,0
+dmaended:
+	dc.b	13,10,"DMA ended",13,10,0
 	even
 
 ; keymap (raw code to ascii)
@@ -1224,8 +1316,8 @@ font:
 	even
 
 sector_data:
-mfm_track = sector_data + (11*512)
-	; bytes 13630
-; screen buffer (requires 20kB)
-screen = mfm_track + 13630
-	;blk.b	640*256*1/8, 0
+	; 11*512 bytes
+mfm_track = (sector_data+TRACKSIZE)
+	; 13630 bytes
+screen = (mfm_track+MFM_TRACKSIZE)
+	; 20 kB
