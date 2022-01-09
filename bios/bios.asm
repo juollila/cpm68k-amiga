@@ -171,46 +171,67 @@ _init:
 
 
 	bsr	fd_deselect
-	moveq	#0,d0
+	moveq.l	#0,d0
 	bsr	fd_select
 	bsr	fd_sync
-	moveq	#0,d0
-	bsr	fd_set_side
-	moveq	#0,d0
-	bsr	fd_seek
 
-	move.l	#sector_data,d0
-	bsr	printlong
-	bsr	printcr
-	move.l	#mfm_track,d0
-	bsr	printlong
-	bsr	printcr
-	move.l	#screen,d0
-	bsr	printlong
-	bsr	printcr
-	move.w	#$4000,d0
 
+
+	lea	fetchtrackinfo,a0
+	bsr	printstring
 	bsr	fd_rw_track
-
-	move.l	#sector_data,d0
-	bsr	printlong
-	bsr	printcr
-	move.l	#mfm_track,d0
-	bsr	printlong
-	bsr	printcr
-	move.l	#screen,d0
-	bsr	printlong
-	bsr	printcr
-
-	lea	mfm_track,a0
-	clr.w	d1
-.loop:	move.w	(a0,d1.w),d0
+	move.w	mfm_track,d0
 	bsr	printword
 	bsr	printcr
-	addq.w	#2,d1
-	cmp.w	#32,d1
-	bne	.loop	
+	lea	mfm_track+2,a0
+	move.w	#4,d1
+	bsr	fd_decode_long
+	bsr	printlong
+	bsr	printcr
 
+	lea	seektrack8,a0
+	bsr	printstring
+	move.l	#$8,d0
+	bsr	fd_seek
+
+
+	lea	fetchtrackinfo,a0
+	bsr	printstring
+	bsr	fd_rw_track
+	move.w	mfm_track,d0
+	bsr	printword
+	bsr	printcr
+	lea	mfm_track+2,a0
+	move.w	#4,d1
+	bsr	fd_decode_long
+	bsr	printlong
+	bsr	printcr
+
+
+	lea	seektrack5,a0
+	bsr	printstring
+	move.l	#5,d0
+	bsr	fd_seek
+
+	lea	fetchtrackinfo,a0
+	bsr	printstring
+	bsr	fd_rw_track
+	move.w	mfm_track,d0
+	bsr	printword
+	bsr	printcr
+	lea	mfm_track+2,a0
+	move.w	#4,d1
+	bsr	fd_decode_long
+	bsr	printlong
+	bsr	printcr
+	
+	
+
+; mfm decode long
+;
+; Entry parameters: d1.w (offset to even long)
+;                   a0 (address to odd long)
+; Return value: d0.l (decoded long)
 
 ;	lea	fd_drive,a0
 ;	clr.w	d1
@@ -823,6 +844,8 @@ fd_set_side:
 	lsl.w	#2,d1
 	move.l	(a0,d1.w),a0
 	move.b	d0,FD_SIDE(a0)
+	and.w	#$fffe,FD_TRACK(a0)	; Adjust current track info
+	or.w	d0,FD_TRACK(a0)
 	rts
 
 ;
@@ -863,11 +886,15 @@ fd_step_direction:
 	and.b	#$01,d0
 	beq	.exit		; branch if new dir = forward
 	or.b	#$02,CIAB+PRB	; set direction backward
+	lea	stepbackward,a0
+	bsr	printstring
 	bra	.delay18ms
 .checkdir2:			; prev dir = backward
 	and.b	#$01,d0
 	bne	.exit		; branch if new dir = backward
-	and.b	#$02,CIAB+PRB	; set direction forward
+	and.b	#$fd,CIAB+PRB	; set direction forward
+	lea	stepforward,a0
+	bsr	printstring
 .delay18ms:
 	move.w	#18,d0
 	bsr	delay
@@ -892,14 +919,6 @@ fd_step:
 	;lsl.w	#2,d1
 	;move.l	(a0,d1.w),a0
 	;move.w	FD_TRACK(a0),d0
-	bsr	fd_get_current_track
-	move.b	CIAB+PRB,d1	; get current direction
-	and.w	#$02,d1		; update track number
-	beq	.add
-	subq.w	#1,d0
-	bra	.store
-.add:	addq.w	#1,d0
-.store:	move.b	d1,FD_TRACK(a0)	
 	rts
 
 ;
@@ -956,6 +975,8 @@ fd_get_current_track:
 	lsl.w	#2,d1
 	move.l	(a0,d1.w),a0
 	move.w	FD_TRACK(a0),d0
+	;bsr	printword
+	;bsr	printcr
 	rts
 
 ; Seek track
@@ -965,9 +986,11 @@ fd_get_current_track:
 fd_seek:
 	movem.l	d2-d3,-(sp)
 	move.w	d0,d2			; track number
+	and.w	#1,d0			; set side
+	bsr	fd_set_side
 	bsr	fd_get_current_track
 	move.w	d2,d3			; track
-	sub.w	d3,d0			; offset = track - current track
+	sub.w	d0,d3			; offset = track - current track
 	beq	.exit			; exit if offset is zero
 	bcs	.neg			; offset < 0
 	clr.w	d0			; step forward
@@ -977,9 +1000,24 @@ fd_seek:
 	bsr	fd_step_direction
 .loop:
 	bsr	fd_get_current_track	; exit if current track = track
+	; debug
+	bsr	printword
+	bsr	printcr
+	move.w	#1000,d0
+	bsr	delay
+	bsr	fd_get_current_track	; exit if current track = track
+	; debug end
 	cmp.w	d0,d2
 	beq	.exit
 	bsr	fd_step
+	bsr	fd_get_current_track
+	move.b	CIAB+PRB,d1		; get current direction and update track number
+	and.b	#$02,d1
+	beq	.add
+	subq.w	#2,d0
+	bra	.store
+.add:	addq.w	#2,d0
+.store:	move.w	d0,FD_TRACK(a0)	
 	bra	.loop
 .exit:	clr.w	d0			; set zero flag
 	movem.l	(sp)+,d2-d3
@@ -1042,9 +1080,6 @@ fd_rw_track:
 	move.l	a1,CUSTOM+DSKPTH
 	move.w	#($8000+(MFM_TRACKSIZE/2)),d1	; dma enable + buffer size in words
 	or.w	#$0000,d1			; set read TODO: add write support
-	move.w	d1,d0
-	bsr	printword
-	bsr	printcr
 	move.w	d1,CUSTOM+DSKLEN	; transfer is triggered by writing reg twice
 	move.w	d1,CUSTOM+DSKLEN
 	bsr	fd_wait_dma
@@ -1056,6 +1091,22 @@ fd_rw_track:
 .ok2:
 	move.w	#$4000,CUSTOM+DSKLEN	; dma disable + read
 	move.w	#2,CUSTOM+INTREQ	; clear disk dma interrupt
+	rts
+
+; mfm decode long
+;
+; Entry parameters: d1.w (offset to even long)
+;                   a0 (address to odd long)
+; Return value: d0.l (decoded long)
+fd_decode_long:
+	move.l	d2,-(sp)
+	move.l	0(a0),d0		; decode odd long
+	and.l	#$55555555,d0
+	lsl.l	#1,d0			; odd long = odd long << 1
+	move.l	(a0,d1.w),d2		; decode even long
+	and.l	#$55555555,d2
+	or.l	d2,d0			; result = (odd long << 1) | even long
+	move.l	(sp)+,d2
 	rts
 
 fd_decode_mfm:
@@ -1169,6 +1220,7 @@ hex:	dc.b	"0123456789ABCDEF"
 ; Entry parameters:
 ;	d0.w:	time in milliseconds
 starttimer:
+	movem.l	d0/a1,-(sp)
 	lea	CIAB,a1
 	move.b	ICR(a1),d1		; ack CIAB interrupts
 	move.b	#$01,CRA(a1)		; timer A: continuous mode
@@ -1178,6 +1230,7 @@ starttimer:
 	move.b	d0,TBLO(a1)		; set timer B count
 	lsr.w	#8,d0
 	move.b	d0,TBHI(a1)
+	movem.l	(sp)+,d0/a1
 	rts
 
 ; delay in milliseconds
@@ -1186,8 +1239,11 @@ starttimer:
 ;	d0.w:	delay in milliseconds
 delay:
 	bsr	starttimer
-.wait:	btst.b	#1,ICR(a1)		; check timer B interrupt
+.wait:	btst.b	#1,CIAB+ICR		; check timer B interrupt
 	beq	.wait
+	clr.b	CIAB+CRA		; disable timer A in CIAB
+	clr.b	CIAB+CRB		; disable timer B in CIAB
+	move.b	#$7f,CIAB+ICR		; disable all interrupts in CIAB
 	rts
 
 
@@ -1293,6 +1349,16 @@ dmaerror:
 dmaended:
 	dc.b	13,10,"DMA ended",13,10,0
 	even
+stepforward:
+	dc.b	"Step forward",13,10,0
+stepbackward:
+	dc.b	"Step backward",13,10,0
+seektrack8:
+	dc.b	"Seek track 6", 13, 10, 0
+seektrack5:
+	dc.b	"Seek track 5", 13, 10, 0
+fetchtrackinfo:
+	dc.b	"Fetch track info", 13, 10, 0
 
 ; keymap (raw code to ascii)
 keymap_us:
