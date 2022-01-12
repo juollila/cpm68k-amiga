@@ -118,8 +118,7 @@ CRB	= $f00	; Control register B
 ;	d0.w: $00
 ; Return value: d0.w: user/disk numbers
 ;
-_init:	
-	lea	CIAA,a0
+_init:	lea	CIAA,a0
 	lea	CIAB,a1
 	lea	CUSTOM,a6
 	bsr	takeover
@@ -134,6 +133,85 @@ _init:
 	; print bios string
 	lea	biosstring(pc),a0
 	bsr	printstring
+;	checking stack location
+	bsr	printcr
+	move.l	$4,a0
+	move.l	54(a0),d0	; system stack upper
+	bsr	printlong
+	bsr	printcr
+	move.l	58(a0),d0	; system stack lower
+	bsr	printlong
+	bsr	printcr
+	move.l	62(a0),d0	; top of chip memory
+	bsr	printlong
+	bsr	printcr
+	move.l	#0,a1		; task itself
+	move.l	$4,a6		; exec base
+	jsr	-$126(a6)	; find task
+	move.l	d0,a0		; task base
+	move.l	54(a0),d0	; stack pointer
+	bsr	printlong
+	bsr	printcr
+	move.l	58(a0),d0	; stack lower bound
+	bsr	printlong
+	bsr	printcr
+	move.l	62(a0),d0	; stack upper bound
+	bsr	printlong
+	bsr	printcr
+	move.l	#$7ffff,d0
+	bsr	printlong
+	bsr	printcr
+;
+;
+;  STRUCTURE    LN,0
+;        APTR    LN_SUCC ; 0
+;        APTR    LN_PRED ; 4
+;        UBYTE   LN_TYPE ; 8
+;        BYTE    LN_PRI  ; 9
+;        APTR    LN_NAME ; 10
+;        LABEL   LN_SIZE ; 14
+
+; STRUCTURE LIB,LN_SIZE
+;    UBYTE   LIB_FLAGS                   ; 14
+;    UBYTE   LIB_pad                     ; 15
+;    UWORD   LIB_NEGSIZE         ; 16
+;    UWORD   LIB_POSSIZE         ; 18
+;    UWORD   LIB_VERSION         ; 20
+;    UWORD   LIB_REVISION                ; 22
+;    APTR    LIB_IDSTRING                ; 24
+;    ULONG   LIB_SUM                     ; 28
+;    UWORD   LIB_OPENCNT         ; 32
+;    LABEL   LIB_SIZE    ;34
+
+; STRUCTURE  ExecBase,LIB_SIZE
+;        UWORD   SoftVer ; 34
+;struct Node {
+;    struct  Node *ln_Succ;	/* Pointer to next (successor) */
+;    struct  Node *ln_Pred;	/* Pointer to previous (predecessor) */
+;    UBYTE   ln_Type;
+;    BYTE    ln_Pri;		/* Priority, for sorting */
+;    char    *ln_Name;		/* ID string, null terminated */
+;};	/* Note: word aligned */
+
+
+;    struct  Node tc_Node;
+; 14   UBYTE   tc_Flags;
+;    UBYTE   tc_State;
+;    BYTE    tc_IDNestCnt;	    /* intr disabled nesting*/
+;    BYTE    tc_TDNestCnt;	    /* task disabled nesting*/
+; 18   ULONG   tc_SigAlloc;	    /* sigs allocated */
+; 22   ULONG   tc_SigWait;	    /* sigs we are waiting for */
+; 26   ULONG   tc_SigRecvd;	    /* sigs we have received */
+; 30   ULONG   tc_SigExcept;	    /* sigs we will take excepts for */
+; 34   UWORD   tc_TrapAlloc;	    /* traps allocated */
+; 36   UWORD   tc_TrapAble;	    /* traps enabled */
+; 38   APTR    tc_ExceptData;	    /* points to except data */
+; 42   APTR    tc_ExceptCode;	    /* points to except code */
+; 46   APTR    tc_TrapData;	    /* points to trap code */
+; 50   APTR    tc_TrapCode;	    /* points to trap data */
+; 54   APTR    tc_SPReg;		    /* stack pointer	    */
+;    APTR    tc_SPLower;	    /* stack lower bound    */
+;    APTR    tc_SPUpper;	    /* stack upper bound + 2*/
 	;move.w	#$00f,COLOR1(a6)
 	;move.w	#60000,d0		; 60 000 milliseconds
 	;bsr	delay
@@ -184,7 +262,7 @@ _init:
 	bsr	printword
 	bsr	printcr
 	lea	mfm_track+2,a0
-	move.w	#4,d1
+	move.w	#4,d2
 	bsr	fd_decode_long
 	bsr	printlong
 	bsr	printcr
@@ -202,28 +280,28 @@ _init:
 	bsr	printword
 	bsr	printcr
 	lea	mfm_track+2,a0
-	move.w	#4,d1
+	move.w	#4,d2
 	bsr	fd_decode_long
 	bsr	printlong
 	bsr	printcr
 
 
-	lea	seektrack5,a0
-	bsr	printstring
-	move.l	#5,d0
-	bsr	fd_seek
+	;lea	seektrack5,a0
+	;bsr	printstring
+	;move.l	#5,d0
+	;bsr	fd_seek
 
-	lea	fetchtrackinfo,a0
-	bsr	printstring
-	bsr	fd_rw_track
-	move.w	mfm_track,d0
-	bsr	printword
-	bsr	printcr
-	lea	mfm_track+2,a0
-	move.w	#4,d1
-	bsr	fd_decode_long
-	bsr	printlong
-	bsr	printcr
+	;lea	fetchtrackinfo,a0
+	;bsr	printstring
+	;bsr	fd_rw_track
+	;move.w	mfm_track,d0
+	;bsr	printword
+	;bsr	printcr
+	;lea	mfm_track+2,a0
+	;move.w	#4,d2
+	;bsr	fd_decode_long
+	;bsr	printlong
+	;bsr	printcr
 	
 	
 
@@ -1095,18 +1173,24 @@ fd_rw_track:
 
 ; mfm decode long
 ;
-; Entry parameters: d1.w (offset to even long)
+; Entry parameters: d1.l (checksum)
+;                   d2.w (offset to even long)
 ;                   a0 (address to odd long)
-; Return value: d0.l (decoded long)
+; Internally uses also:
+;                   d3.l (decoded odd long)
+;                   d4.l (decoded even long)
+; Return values: d0.l (decoded long)
+;                d1.l (checksum)
 fd_decode_long:
-	move.l	d2,-(sp)
-	move.l	0(a0),d0		; decode odd long
-	and.l	#$55555555,d0
+	move.l	0(a0),d3		; decode odd long
+	and.l	#$55555555,d3
+	move.l	(a0,d2.w),d4		; decode even long
+	and.l	#$55555555,d4
+	move.l	d3,d0
 	lsl.l	#1,d0			; odd long = odd long << 1
-	move.l	(a0,d1.w),d2		; decode even long
-	and.l	#$55555555,d2
-	or.l	d2,d0			; result = (odd long << 1) | even long
-	move.l	(sp)+,d2
+	or.l	d4,d0			; result = (odd long << 1) | even long
+	eor.l	d3,d1			; checksum = chekcsum xor decoded odd long xor decoded even long
+	eor.l	d4,d1
 	rts
 
 fd_decode_mfm:
@@ -1168,16 +1252,14 @@ printchar:
 ; d0.b = byte to print
 printbyte:
 	movem.l	d0-d1/a0-a1,-(sp)
-	clr.w	d1
 	move.b	d0,d1
+	move.l	d1,-(sp)
 	rol.b	#4,d1
-	and.b	#$f,d1
+	and.w	#$f,d1
 	lea	hex(pc),a0
 	move.b	0(a0,d1.w),d1
 	bsr	conout
-	move.l	(sp)+,d0
-	move.l	d0,-(sp)
-	move.b	d0,d1
+	move.l	(sp)+,d1
 	and.w	#$f,d1
 	lea	hex(pc),a0
 	move.b	0(a0,d1.w),d1
@@ -1354,11 +1436,12 @@ stepforward:
 stepbackward:
 	dc.b	"Step backward",13,10,0
 seektrack8:
-	dc.b	"Seek track 6", 13, 10, 0
+	dc.b	"Seek track 8", 13, 10, 0
 seektrack5:
 	dc.b	"Seek track 5", 13, 10, 0
 fetchtrackinfo:
 	dc.b	"Fetch track info", 13, 10, 0
+	even
 
 ; keymap (raw code to ascii)
 keymap_us:
