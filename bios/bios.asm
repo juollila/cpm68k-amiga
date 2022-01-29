@@ -131,130 +131,14 @@ _init:	lea	CIAA,a0
 	move.w	#$1a,d1
 	bsr	conout
 	; print bios string
-	lea	biosstring(pc),a0
+	lea	bios_str(pc),a0
 	bsr	printstring
-;	checking stack location
-	bsr	printcr
-	move.l	$4,a0
-	move.l	54(a0),d0	; system stack upper
-	bsr	printlong
-	bsr	printcr
-	move.l	58(a0),d0	; system stack lower
-	bsr	printlong
-	bsr	printcr
-	move.l	62(a0),d0	; top of chip memory
-	bsr	printlong
-	bsr	printcr
-	move.l	#0,a1		; task itself
-	move.l	$4,a6		; exec base
-	jsr	-$126(a6)	; find task
-	move.l	d0,a0		; task base
-	move.l	54(a0),d0	; stack pointer
-	bsr	printlong
-	bsr	printcr
-	move.l	58(a0),d0	; stack lower bound
-	bsr	printlong
-	bsr	printcr
-	move.l	62(a0),d0	; stack upper bound
-	bsr	printlong
-	bsr	printcr
-	move.l	#$7ffff,d0
-	bsr	printlong
-	bsr	printcr
-;
-;
-;  STRUCTURE    LN,0
-;        APTR    LN_SUCC ; 0
-;        APTR    LN_PRED ; 4
-;        UBYTE   LN_TYPE ; 8
-;        BYTE    LN_PRI  ; 9
-;        APTR    LN_NAME ; 10
-;        LABEL   LN_SIZE ; 14
-
-; STRUCTURE LIB,LN_SIZE
-;    UBYTE   LIB_FLAGS                   ; 14
-;    UBYTE   LIB_pad                     ; 15
-;    UWORD   LIB_NEGSIZE         ; 16
-;    UWORD   LIB_POSSIZE         ; 18
-;    UWORD   LIB_VERSION         ; 20
-;    UWORD   LIB_REVISION                ; 22
-;    APTR    LIB_IDSTRING                ; 24
-;    ULONG   LIB_SUM                     ; 28
-;    UWORD   LIB_OPENCNT         ; 32
-;    LABEL   LIB_SIZE    ;34
-
-; STRUCTURE  ExecBase,LIB_SIZE
-;        UWORD   SoftVer ; 34
-;struct Node {
-;    struct  Node *ln_Succ;	/* Pointer to next (successor) */
-;    struct  Node *ln_Pred;	/* Pointer to previous (predecessor) */
-;    UBYTE   ln_Type;
-;    BYTE    ln_Pri;		/* Priority, for sorting */
-;    char    *ln_Name;		/* ID string, null terminated */
-;};	/* Note: word aligned */
-
-
-;    struct  Node tc_Node;
-; 14   UBYTE   tc_Flags;
-;    UBYTE   tc_State;
-;    BYTE    tc_IDNestCnt;	    /* intr disabled nesting*/
-;    BYTE    tc_TDNestCnt;	    /* task disabled nesting*/
-; 18   ULONG   tc_SigAlloc;	    /* sigs allocated */
-; 22   ULONG   tc_SigWait;	    /* sigs we are waiting for */
-; 26   ULONG   tc_SigRecvd;	    /* sigs we have received */
-; 30   ULONG   tc_SigExcept;	    /* sigs we will take excepts for */
-; 34   UWORD   tc_TrapAlloc;	    /* traps allocated */
-; 36   UWORD   tc_TrapAble;	    /* traps enabled */
-; 38   APTR    tc_ExceptData;	    /* points to except data */
-; 42   APTR    tc_ExceptCode;	    /* points to except code */
-; 46   APTR    tc_TrapData;	    /* points to trap code */
-; 50   APTR    tc_TrapCode;	    /* points to trap data */
-; 54   APTR    tc_SPReg;		    /* stack pointer	    */
-;    APTR    tc_SPLower;	    /* stack lower bound    */
-;    APTR    tc_SPUpper;	    /* stack upper bound + 2*/
-	;move.w	#$00f,COLOR1(a6)
-	;move.w	#60000,d0		; 60 000 milliseconds
-	;bsr	delay
-	;move.b	#$000,COLOR1(a6)
-	
-	;move.b	#$fe,d0
-	;moveq	#0,d1
-	;rol.b	d1,d0
-	;bsr	printbyte
-	;move.b	#$fe,d0
-	;moveq	#1,d1
-	;rol.b	d1,d0
-	;bsr	printbyte
-	;move.b	#$fe,d0
-	;moveq	#2,d1
-	;rol.b	d1,d0
-	;bsr	printbyte
-	;move.b	#$fe,d0
-	;moveq	#3,d1
-	;rol.b	d1,d0
-	;bsr	printbyte
-
-	; select & deselect debugging
-	;bsr	fd_deselect
-	;move.w	#5000,d0
-	;bsr	delay
-	;moveq	#0,d0
-	;bsr	fd_select
-	;move.w	#5000,d0
-	;bsr	delay
-	;bsr	fd_deselect
-
-	;	d1.b: Disk drive
-;	d2.b: Logged in flag
-
 
 	bsr	fd_deselect
 	moveq.l	#0,d0
 	bsr	fd_select
 	bsr	fd_sync
 
-
-
 	lea	fetchtrackinfo,a0
 	bsr	printstring
 	bsr	fd_rw_track
@@ -267,12 +151,11 @@ _init:	lea	CIAA,a0
 	bsr	printlong
 	bsr	printcr
 
-	lea	seektrack8,a0
+	lea	seektrack0,a0
 	bsr	printstring
-	move.l	#$8,d0
+	move.l	#$0,d0
 	bsr	fd_seek
 
-
 	lea	fetchtrackinfo,a0
 	bsr	printstring
 	bsr	fd_rw_track
@@ -284,6 +167,29 @@ _init:	lea	CIAA,a0
 	bsr	fd_decode_long
 	bsr	printlong
 	bsr	printcr
+
+	bsr	fd_decode_track
+	lea	sector_data,a0
+	clr.w	d7
+.loop:	move.b	(a0)+,d0
+;	cmp.b	#$20,d1
+;	bcs	.controlch
+;	cmp.b	#$7f,d1
+;	bcc	.controlch
+
+	cmp.b	#32,d0
+	bcs	.controlch
+	cmp.b	#127,d0
+	bcc	.controlch
+	bra	.print
+.controlch:
+	move.b	#'.',d0
+.print:
+	bsr	printchar
+	addq.w	#1,d7
+	cmp.w	#512,d7
+	bne	.loop
+	
 
 
 	;lea	seektrack5,a0
@@ -303,27 +209,6 @@ _init:	lea	CIAA,a0
 	;bsr	printlong
 	;bsr	printcr
 	
-	
-
-; mfm decode long
-;
-; Entry parameters: d1.w (offset to even long)
-;                   a0 (address to odd long)
-; Return value: d0.l (decoded long)
-
-;	lea	fd_drive,a0
-;	clr.w	d1
-;.loop:	move.l	(a0,d1.w),d0
-;	bsr	printlong
-;	move.b	#13,d0
-;	bsr	printchar
-;	move.b	#10,d0
-;	bsr	printchar
-;	addq.w	#4,d1
-;	cmp.w	#56,d1
-;	bne	.loop
-	
-
 	bra	dosomestuff
 
 	; TODO: setting up trap handler, internal variables (e.g. iobyte)
@@ -1149,7 +1034,7 @@ fd_wait_dma:
 fd_rw_track:
 	bsr	fd_wait_motor		; check that motor is on
 	beq	.ok1
-	lea	motorerror(pc),a0
+	lea	motor_error_str(pc),a0
 	bsr	printstring
 	rts
 .ok1:
@@ -1162,7 +1047,7 @@ fd_rw_track:
 	move.w	d1,CUSTOM+DSKLEN
 	bsr	fd_wait_dma
 	beq	.ok2
-	lea	dmaerror(pc),a0
+	lea	dma_error_str(pc),a0
 	bsr	printstring
 	move.w	#$4000,CUSTOM+DSKLEN	; dma disable + read
 	rts
@@ -1181,7 +1066,9 @@ fd_rw_track:
 ;                   d4.l (decoded even long)
 ; Return values: d0.l (decoded long)
 ;                d1.l (checksum)
+;                a0 (address to next odd long)
 fd_decode_long:
+	movem.l	d3-d4,-(sp)
 	move.l	0(a0),d3		; decode odd long
 	and.l	#$55555555,d3
 	move.l	(a0,d2.w),d4		; decode even long
@@ -1189,17 +1076,195 @@ fd_decode_long:
 	move.l	d3,d0
 	lsl.l	#1,d0			; odd long = odd long << 1
 	or.l	d4,d0			; result = (odd long << 1) | even long
-	eor.l	d3,d1			; checksum = chekcsum xor decoded odd long xor decoded even long
+	eor.l	d3,d4			; checksum = chekcsum xor decoded odd long xor decoded even long
 	eor.l	d4,d1
+	;bsr	printlong
+	;bsr	printcr
+	addq.l	#4,a0
+	movem.l	(sp)+,d3-d4
 	rts
 
-fd_decode_mfm:
-	rts
+; MFM Sector Format
+; =================
+;
+; 2xword mfm value $aaaaaaaa (when decoded, two bytes of 0)
+;
+; Synchronization
+; $4489 Synchronization
+; $4489 Synchronization
+;
+; Header
+; 1xlong Info (odd bits)
+; 1xlong Info (even bits)
+; 4xlong Sector label (odd)
+; 4xlong Sector label (even)
+; End of Header
+;
+; 1xlong Header checksum (odd)
+; 1xlong Header checksum (even)
+; 
+; 1xlong Data checksum (odd)
+; 1xlong Data checksum (even)
+;
+; Data
+; 512xbyte Data (odd)
+; 512xbyte Data (even)
+; End of Data
+;
 
-fd_decode_mfm_word:
-	rts
-
+; decode track
+;
+; Entry parameters: None
+; Returns: None
 fd_decode_track:
+	; a0 = current position (mfm track)
+	; a1 = destination (current position of sector data)
+	; a2 = current position (mfm track) + offset
+	; a3 = next sector (mfm track)
+	; d0.l = decoded long
+	; d1.l = checksum
+	; d2.w = current offset to even long
+	; d3.w = a number of sectors decoded
+	; d4.l = sector info $ffTTSSSG
+	;        $ff = Amiga v1.0 format
+	;        TT = track number ( 3 means cylinder 1, head 1)
+	;        SS = sector number (0 to 10)
+	;        SG = sectors until end of writing (including current one)
+	; d5.w = current mfm sector number
+	; d6.w = current mfm track number
+	; d7.l = tmp
+
+	;bsr	fd_get_current_track		; get current track number
+	;move.w	d0,d6
+	;move.w	FD_SIDE(a0),d0
+	;add.w	d0,d6
+	lea	mfm_track,a0			; set mfm buffer address
+	clr.w	d3				; number of sectors decoded = 0
+
+	; skip sync words
+.loop:	cmp.l	#(mfm_track+MFM_TRACKSIZE),a0	; is current position >= mfm track address + mfm track size
+	bcc	.toofewsectors
+	cmp.w	#$4489,(a0)			; skip sync words
+	bne	.skipsyncdone
+	addq.l	#2,a0
+	bra	.loop
+.skipsyncdone:
+	move.l	a0,a2				; is current position + 1088 >= mfm track address + mfm track size
+	add.l	#1088,a2
+	cmp.l	#(mfm_track+MFM_TRACKSIZE),a2
+	bcc	.toofewsectors
+	move.l	a0,a3				; next sector = current position + 1082
+	add.l	#1082,a3
+
+	; get sector info
+	clr.l	d1				; checksum = 0
+	move.w	#4,d2				; decode sector info
+	; debug
+	;move.l	a0,d0
+	;bsr	printlong
+	;lea	mfm_track+2,a0
+	;move.l	a0,d0
+	;bsr	printlong
+	;
+	bsr	fd_decode_long
+	move.l	d0,d4				; save sector info
+	addq.l	#4,a0				; current position = current position + 4
+	;and.l	#$ff000000,d0			; check high byte of sector info, $ff = Amiga v1.0 format
+	;cmp.l	#$ff000000,d0
+	;bne	.badsectorheader
+	move.l	d4,d5				; check sector number (should be 0-10)
+	and.l	#$ff00,d5
+	lsr.w	#8,d5
+	;cmp.w	#11,d5
+	;bcc	.badsectorheader
+	; TODO: add track check
+
+	; decode sector label
+	move.w	#16,d2				; offset to even long
+	clr.w	d7
+.decodelabel:
+	bsr	fd_decode_long
+	addq.w	#4,d7
+	cmp.w	#16,d7
+	bne	.decodelabel
+	add.l	#16,a0				; current position = current position + 16
+
+	; check header checksum
+	move.l	d1,d7				; save checksum
+	move.w	#4,d2				; offset to even long
+	bsr	fd_decode_long
+	; debug
+	;move.l	d7,d0
+	;bsr	printlong
+	;bsr	printcr
+	;rts
+	;
+	cmp.l	d0,d7				; compare checksum
+	bne	.badsectorheaderchecksum
+	addq.l	#4,a0				; current position = current position + 4
+
+	; decode data checksum
+	bsr	fd_decode_long
+	move.l	d0,d1
+	addq.l	#4,a0				; current position = current position + 4
+	
+	; decode data
+	move.l	d5,d0
+	moveq.l	#9,d7
+	lsl.l	d7,d0				; number of sector * 512
+	lea	sector_data,a1
+	add.l	d0,a1				; destination address = sector buffer + number of sector * 512
+	clr.w	d7
+	move.w	#512,d2				; offset to even long
+.decodedata:
+	bsr	fd_decode_long
+	move.l	d0,(a1)+
+	addq.w	#4,d7
+	cmp.w	#512,d7
+	bne	.decodedata
+
+	; check data checksum
+	cmp.l	#0,d1
+	bne	.badsectorchecksum
+
+	; check number of sectors decoded
+	addq.w	#1,d3
+	cmp.w	#11,d3
+	beq	.exit
+
+	; skip non sync words
+	move.l	a3,a0				; current position = beginnig of next sector - 6
+.skip:	cmp.w	#$4489,(a0)			skip non sync words
+	beq	.loop
+	addq.l	#2,a0
+	cmp.l	#(mfm_track+MFM_TRACKSIZE),a0	; is current position >= mfm track address + mfm track size
+	bcc	.toofewsectors
+	bra	.skip
+
+	
+	
+	
+	
+	
+	
+	
+.badsectorheader:
+	lea	bad_sector_header_str,a0
+	bsr	printstring
+	rts
+.badsectorheaderchecksum:
+	lea	bad_sector_header_checksum_str,a0
+	bsr	printstring
+	rts
+.toofewsectors:
+	lea	too_few_sectors_str,a0
+	bsr	printstring
+	rts
+.badsectorchecksum:
+	lea	bad_sector_checksum_str,a0
+	bsr	printstring
+	rts
+.exit:
 	rts
 
 fd_encode_track:
@@ -1421,13 +1486,21 @@ floppy_alv:
 	blk.b	TRACKS*TRACKSIZE/BLOCKSIZE/8
 
 ; strings
-biosstring:
-	dc.b	"*** CP/M-68k BIOS for Commodore Amiga ***",13,10
-        dc.b    "**** Coded by Juha Ollila  2021-2022 ****",13,10,0
-motorerror:
-	dc.b	13,10,"Drive not ready",13,10,0
-dmaerror:
-	dc.b	13,10,"Disk DMA timeout",13,10,0
+bios_str:
+	dc.b	"*** SturmBIOS for  Commodore Amiga ***",13,10
+        dc.b    "*** Coded by Juha Ollila 2021-2022 ***",13,10,0
+motor_error_str:
+	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
+dma_error_str:
+	dc.b	13,10,"BIOS Error: Disk DMA timeout",13,10,0
+too_few_sectors_str:
+	dc.b	13,10,"BIOS Error: Too few sectors",13,10,0
+bad_sector_header_str:
+	dc.b	13,10,"BIOS Error: Bad sector header",13,10,0
+bad_sector_header_checksum_str:
+	dc.b	13,10,"BIOS Error: Bad sector header checksum",13,10,0
+bad_sector_checksum_str:
+	dc.b	13,10,"BIOS Error: Bad sector checksum",13,10,0
 dmaended:
 	dc.b	13,10,"DMA ended",13,10,0
 	even
@@ -1435,10 +1508,10 @@ stepforward:
 	dc.b	"Step forward",13,10,0
 stepbackward:
 	dc.b	"Step backward",13,10,0
+seektrack0:
+	dc.b	"Seek track 0", 13, 10, 0
 seektrack8:
 	dc.b	"Seek track 8", 13, 10, 0
-seektrack5:
-	dc.b	"Seek track 5", 13, 10, 0
 fetchtrackinfo:
 	dc.b	"Fetch track info", 13, 10, 0
 	even
