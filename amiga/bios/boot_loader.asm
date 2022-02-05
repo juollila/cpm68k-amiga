@@ -78,6 +78,6 @@ start:
 	rorg	2*TD_SECTOR
 
 cpm_start:
-	incbin	"test.bin"
+	incbin	"cpm.bin"
 	cnop	0,TD_SECTOR
 cpm_end:

@@ -109,7 +109,8 @@ ICR	= $d00	; Interrupt control register
 CRA	= $e00	; Control register A
 CRB	= $f00	; Control register B
 
-	code_c
+;	code_c
+	org	$15000
 
 ;
 ; Function 0: Initialization
