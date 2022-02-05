@@ -53,10 +53,16 @@ $ vasmm68k_mot bios.asm -Fbin -o bios.bin
 Creating CPM.BIN
 ================
 
-CP/M binary contains CCP, BDOS and BIOS. The binary is created concatenating
-cpm15000.bin and bios.bin.
+CP/M binary contains CCP, BDOS and BIOS. The starting address of CCP and BDOS (cpm15000.bin)
+is $15000 and starting address of BIOS is $1b000. A padding must be added between cpm15000.bin
+and bios.bin. At first a padding file is created.
 ```
-$ cat cpm15000.bin bios.bin > cpm.bin
+$ dd if=/dev/zero of=padding.bin bs=3648 count=1
+```
+
+The cpm.bin file is created concatenating cpm15000.bin, padding.bin and bios.bin.
+```
+$ cat cpm15000.bin padding.bin bios.bin > cpm.bin
 ```
 
 Creating bootable disk image
@@ -69,7 +75,7 @@ $ vasmm68k_mot boot_loader.asm -Fbin -o boot.bin
 Calculate and write Amiga boot block's checksum.
 
 ```
-$ checksum --output boot-with-checksum.bin boot.bin
+$ python3 checksum.py --output boot-with-checksum.bin boot.bin
 ```
 
 Bootable disk image is created copying boot track binary to a blank CP/M disk image:
@@ -77,3 +83,8 @@ Bootable disk image is created copying boot track binary to a blank CP/M disk im
 $ cp cpm-blank.adf cpm-boot.adf
 $ mkfs.cpm -f amiga -b boot-with-checksum.bin cpm-boot.adf
 ```
+
+Copy files to cpm-boot.adf
+==========================
+
+TODO: Add files

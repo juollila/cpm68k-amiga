@@ -21,7 +21,9 @@
 ; SOFTWARE.
 ;
 
-CUSTOM	= $dff000	; Start of custom chips
+CUSTOM		= $dff000	; Start of custom chips
+CPMSTART	= $15000	; Start of CP/M
+BIOSSTART	= $1b000	; Start of BIOS
 
 ; Custom chip register offsets
 DMACONR = $002	; DMA control read
@@ -110,7 +112,7 @@ CRA	= $e00	; Control register A
 CRB	= $f00	; Control register B
 
 ;	code_c
-	org	$15000
+	org	BIOSSTART
 
 ;
 ; Function 0: Initialization
@@ -127,6 +129,7 @@ _init:	lea	CIAA,a0
 	bsr	inittimers
 	bsr	initkeyboard
 	bsr	initfloppy
+	bsr	inittrap
 
 	; clear screen
 	move.w	#$1a,d1
@@ -136,6 +139,9 @@ _init:	lea	CIAA,a0
 	bsr	printstring
 
 	bsr	fd_deselect
+	clr.l	d0				; log on disk A, user 0
+	rts					; return to BDOS
+
 	moveq.l	#0,d0
 	bsr	fd_select
 	bsr	fd_sync
@@ -217,6 +223,13 @@ _init:	lea	CIAA,a0
 	clr.l	d0			; login drive A, user 0
 	rts
 
+dosomestuff:
+.skip:
+	bsr	conin
+	move.w	d0,d1
+	bsr	conout
+	bra	.skip
+
 takeover:
 	; take over system
 	move.w	#$7fff,INTENA(a6)	; disable interrupts
@@ -272,23 +285,66 @@ initfloppy:
 	move.w	#$9500,ADKCON(a6)	; enable mfmprec, wordsync and fast
 	move.w	#$4489,DSKSYNC(a6)	; set mfm sync mark
 	move.w	#$8010,DMACON(a6)	; enable disk DMA
-
 	rts
 
-dosomestuff:
-.skip:
-	bsr	conin
-	move.w	d0,d1
-	bsr	conout
-	bra	.skip
+inittrap:
+	move.l	#traphandler,$8c	; set up trap #3 handler
+	rts
 
+traphandler:
+	cmp	#NUMBER_OF_FUNCTIONS,d0
+	bcc	.skip
+	lsl	#2,d0			; multiply by 4
+	;move.l	6(pc,d0),a0
+	;lea	notimplemented,a0
+	lea	biosbase,a0
+	move.l	(a0,d0.w),a0
+	jsr	(a0)
+.skip:
+	rte
+
+NUMBER_OF_FUNCTIONS	= 23
+
+biosbase:
+	dc.l	notimplemented ;_init
+	dc.l	notimplemented ;warmboot
+	dc.l	constatus ;constatus
+	dc.l	notimplemented ;conin
+	dc.l	conout ;conout
+	dc.l	notimplemented ;listchar
+	dc.l	notimplemented ;auxout
+	dc.l	notimplemented ;auxin
+	dc.l	notimplemented ;home
+	dc.l	selectdrive ;selectdrive
+	dc.l	notimplemented ;settrack
+	dc.l	notimplemented ;setsector
+	dc.l	notimplemented ;setdma
+	dc.l	notimplemented ;read
+	dc.l	notimplemented ;write
+	dc.l	notimplemented ;listst
+	dc.l	notimplemented ;sectran
+	dc.l	notimplemented ;setdma
+	dc.l	getaddresstable ;getseg
+	dc.l	notimplemented ;segiob
+	dc.l	notimplemented ;setiob
+	dc.l	notimplemented ;flush
+	dc.l	setexception ;setexc
 
 waitblit:
 	tst.w	CUSTOM+DMACONR
 .waitblit0:
 	btst	#14-8,CUSTOM+DMACONR	; wait blit to complete
 	bne	.waitblit0
-	rts 
+	rts
+
+notimplemented:
+	lsr	#2,d0
+	bsr	printbyte
+	bsr	printcr
+	lea	not_implemented_str,a0
+	bsr	printstring
+.halt:	jmp	.halt
+	rts
 
 ; Function 1: Warm boot
 ;
@@ -296,7 +352,7 @@ waitblit:
 ;	d0.w: $01
 ; Return value: None
 warmboot:
-	; jmp	_ccp
+	jmp	CPMSTART
 
 ;
 ; Function 2: Console status
@@ -682,6 +738,14 @@ home:
 ;	d0.l: Address of selected drive's DPH
 ;
 selectdrive:
+	bsr	printword
+	bsr	printcr
+	move.b	d1,d0
+	bsr	printbyte
+	bsr	printcr
+	move.b	d1,d0
+	bsr	printbyte
+	bsr	printcr
 	moveq	#0,d0			; no DPH
 	cmp.b	#0,d1
 	bcs	.exit
@@ -689,7 +753,8 @@ selectdrive:
 	bcc	.exit
 	and.w	#$f,d1
 	move.w	d1,fd_drive
-	; TODO: logged in parameter handling
+	and.w	#$ffff,d2
+	move.w	d2,fd_logged
 	move.l	#floppy_dph,d0
 .exit
 	rts
@@ -742,13 +807,61 @@ setsector:
 ; Function 13 Read sector: Not started
 ; Function 14 Write sector: Not started
 ; Function 15 Return list status: Not needed at first phase
-; Function 16 Sector translate: Not started
+
+; Function 16 Sector translate (NOT IMPLEMENTED)
+;
+; Entry parameters:
+;	d0.w: $10
+;	d1.w: Logical sector number
+;	d2.l: Address of translate table
+; Return value:
+;	d0.w: physical sector number
+;sectortranslate:
+;	bsr	printword
+;	bsr	printcr
+;	move.w	d1,d0
+;	bsr	printword
+;	bsr	printcr
+;	move.l	d2,d0
+;	bsr	printlong
+;	bsr	printcr
+;	rts
+
 ; Function 17 ?: Missing from CP/M-68k
-; Function 18 Get address of memory region table: Not started
+
+; Function 18 Get address of memory region table
+;
+; Entry parameters:
+;	d0.w: $12
+; Return value:
+;	d0.l: Memory region table address
+getaddresstable:
+	move.l	#.table,d0
+	rts
+.table:
+	dc.w	1	; count
+	dc.l	$400	; base address of first region
+	dc.l	CPMSTART-$400
+
 ; Function 19 Get I/O byte: Not needed at first phase
 ; Function 20 Set I/O byte: Not needed at first phase
 ; Function 21 Flush buffers: Not started (will be dummy function)
+
 ; Function 22 Set exception handler address: Not started
+;
+; Entry parameters:
+;	d0.w: $16
+;	d1.w: Exception vector number
+;	d2.l: Exception vector address
+; Return value:
+;	d0.l: Previous vector contents
+setexception:
+	and.l	#$ff,d1		; exception should be between 0-255
+	lsl.l	#2,d1		; multiply by 4
+	move.l	d1,a0
+	move.l	(a0),d0		; return old vector value
+	move.l	d2,(a0)		; insert new vector
+	rts
 
 ;
 ; disk routines
@@ -1424,6 +1537,8 @@ ctrl_key:
 ; floppy variables
 fd_drive:
 	dc.w	0
+fd_logged:
+	dc.w	0
 fd_cache_ok:
 	dc.w	0
 fd_drive_table:
@@ -1466,7 +1581,7 @@ floppy_dph:
 	
 ; floppy disk parameter block
 floppy_dpb:
-	dc.l	TRACKSIZE/128			; spt, 11*512/128=44, number of 128 byte logical sectors per track
+	dc.w	TRACKSIZE/128			; spt, 11*512/128=44, number of 128 byte logical sectors per track
 	dc.b	4 				; bsh, block shift factor = 5 when block size = 2048
 	dc.b	15 				; blm, block mask = 15 when block size = 2048
 	dc.b	0				; exm, extent mask = 0 when block size = 2048 and dsm > 255
@@ -1488,8 +1603,8 @@ floppy_alv:
 
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for  Commodore Amiga ***",13,10
-        dc.b    "*** Coded by Juha Ollila 2021-2022 ***",13,10,0
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.26 ***",13,10
+        dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
 dma_error_str:
@@ -1502,6 +1617,8 @@ bad_sector_header_checksum_str:
 	dc.b	13,10,"BIOS Error: Bad sector header checksum",13,10,0
 bad_sector_checksum_str:
 	dc.b	13,10,"BIOS Error: Bad sector checksum",13,10,0
+not_implemented_str:
+	dc.b	13,10,"BIOS Error: Not implemented",13,10,0
 dmaended:
 	dc.b	13,10,"DMA ended",13,10,0
 	even
