@@ -308,27 +308,27 @@ NUMBER_OF_FUNCTIONS	= 23
 biosbase:
 	dc.l	notimplemented ;_init
 	dc.l	notimplemented ;warmboot
-	dc.l	constatus ;constatus
+	dc.l	constatus
 	dc.l	notimplemented ;conin
-	dc.l	conout ;conout
+	dc.l	conout
 	dc.l	notimplemented ;listchar
 	dc.l	notimplemented ;auxout
 	dc.l	notimplemented ;auxin
 	dc.l	notimplemented ;home
-	dc.l	selectdrive ;selectdrive
-	dc.l	notimplemented ;settrack
-	dc.l	notimplemented ;setsector
-	dc.l	notimplemented ;setdma
-	dc.l	notimplemented ;read
+	dc.l	setdrive
+	dc.l	settrack
+	dc.l	setsector
+	dc.l	setdma
+	dc.l	readsector
 	dc.l	notimplemented ;write
 	dc.l	notimplemented ;listst
-	dc.l	notimplemented ;sectran
+	dc.l	sectortranslate
 	dc.l	notimplemented ;setdma
-	dc.l	getaddresstable ;getseg
+	dc.l	getaddresstable
 	dc.l	notimplemented ;segiob
 	dc.l	notimplemented ;setiob
 	dc.l	notimplemented ;flush
-	dc.l	setexception ;setexc
+	dc.l	setexception
 
 waitblit:
 	tst.w	CUSTOM+DMACONR
@@ -737,15 +737,15 @@ home:
 ; Return value:
 ;	d0.l: Address of selected drive's DPH
 ;
-selectdrive:
-	bsr	printword
-	bsr	printcr
-	move.b	d1,d0
-	bsr	printbyte
-	bsr	printcr
-	move.b	d1,d0
-	bsr	printbyte
-	bsr	printcr
+setdrive:
+	;bsr	printword
+	;bsr	printcr
+	;move.b	d1,d0
+	;bsr	printbyte
+	;bsr	printcr
+	;move.b	d1,d0
+	;bsr	printbyte
+	;bsr	printcr
 	moveq	#0,d0			; no DPH
 	cmp.b	#0,d1
 	bcs	.exit
@@ -803,12 +803,44 @@ setsector:
 .exit:
 	rts
 
-; Function 12 Set DMA address: Not started
-; Function 13 Read sector: Not started
+; Function 12 Set DMA address
+;
+; Entry parameters:
+;	d0.w:	$c
+;	d1.l:	DMA address
+; Return value: None
+;
+setdma:
+	move.l	d1,fd_dma
+	rts
+
+; Function 13 Read sector
+;
+; Entry parameters:
+;	d0.w: $d
+; Return value:
+;	d0.w: 0 if no error, 1 if physical error
+;
+readsector:
+	move.w	df0,d0
+	bsr	printword
+	bsr	printcr
+	move.w	df0+2,d0
+	bsr	printword
+	bsr	printcr
+	move.w	df0+4,d0
+	bsr	printword
+	bsr	printcr
+	move.w	df0+6,d0
+	bsr	printword
+	bsr	printcr
+.debug	jmp	.debug
+	rts
+
 ; Function 14 Write sector: Not started
 ; Function 15 Return list status: Not needed at first phase
 
-; Function 16 Sector translate (NOT IMPLEMENTED)
+; Function 16 Sector translate
 ;
 ; Entry parameters:
 ;	d0.w: $10
@@ -816,16 +848,9 @@ setsector:
 ;	d2.l: Address of translate table
 ; Return value:
 ;	d0.w: physical sector number
-;sectortranslate:
-;	bsr	printword
-;	bsr	printcr
-;	move.w	d1,d0
-;	bsr	printword
-;	bsr	printcr
-;	move.l	d2,d0
-;	bsr	printlong
-;	bsr	printcr
-;	rts
+sectortranslate:
+	move.w	d1,d0
+	rts
 
 ; Function 17 ?: Missing from CP/M-68k
 
@@ -1541,6 +1566,8 @@ fd_logged:
 	dc.w	0
 fd_cache_ok:
 	dc.w	0
+fd_dma:
+	dc.l	0
 fd_drive_table:
 	dc.l	df0
 	dc.l	df1
@@ -1603,7 +1630,7 @@ floppy_alv:
 
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.26 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.27 ***",13,10
         dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
