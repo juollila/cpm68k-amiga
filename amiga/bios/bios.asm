@@ -138,13 +138,13 @@ _init:	lea	CIAA,a0
 	lea	bios_str(pc),a0
 	bsr	printstring
 
+	move.w	#0,d0
+	bsr	fd_select
+	bsr	fd_sync
 	bsr	fd_deselect
 	clr.l	d0				; log on disk A, user 0
 	rts					; return to BDOS
 
-	moveq.l	#0,d0
-	bsr	fd_select
-	bsr	fd_sync
 
 	lea	fetchtrackinfo,a0
 	bsr	printstring
@@ -309,7 +309,7 @@ biosbase:
 	dc.l	notimplemented ;_init
 	dc.l	notimplemented ;warmboot
 	dc.l	constatus
-	dc.l	notimplemented ;conin
+	dc.l	conin
 	dc.l	conout
 	dc.l	notimplemented ;listchar
 	dc.l	notimplemented ;auxout
@@ -752,9 +752,11 @@ setdrive:
 	cmp.b	#DRIVES,d1
 	bcc	.exit
 	and.w	#$f,d1
-	move.w	d1,fd_drive
+	;move.w	d1,fd_drive
+	move.w	d1,cpm_drive
 	and.w	#$ffff,d2
-	move.w	d2,fd_logged
+	move.w	d2,cpm_logged
+	;move.w	d2,fd_logged
 	move.l	#floppy_dph,d0
 .exit
 	rts
@@ -772,11 +774,12 @@ settrack:
 	bcs	.exit
 	cmp.w	#TRACKS,d1
 	bcc	.exit
-	lea	fd_drive_table,a0
-	move.w	fd_drive,d0
-	lsl.w	#2,d0
-	move.l	(a0,d0.w),a0
-	move.w	d1,FD_TRACK(a0)
+	move.w	d1,cpm_track
+	;lea	fd_drive_table,a0
+	;move.w	fd_drive,d0
+	;lsl.w	#2,d0
+	;move.l	(a0,d0.w),a0
+	;move.w	d1,FD_TRACK(a0)
 .exit:
 	rts
 
@@ -789,17 +792,19 @@ settrack:
 ; Return value: None
 ;
 setsector:
-	lea	fd_drive_table,a0
-	move.w	fd_drive,d0
-	lsl.w	#2,d0
-	move.l	(a0,d0.w),a0
-	move.w	d1,d0
-	bmi	.exit
-	lsr.w	#2,d0		; divide by 4, one sector contains 4 CP/M logical sectors
-	cmp.w	#SECTORS,d0
+	;lea	fd_drive_table,a0
+	;move.w	fd_drive,d0
+	;lsl.w	#2,d0
+	;move.l	(a0,d0.w),a0
+	;move.w	d1,d0
+	;bmi	.exit
+	;lsr.w	#2,d0		; divide by 4, one sector contains 4 CP/M logical sectors
+	;cmp.w	#SECTORS,d0
+	cmp.w	#(TRACKSIZE/128),d1
 	bcc	.exit
-	move.w	d0,FD_SECTOR(a0)
-	move.w	d1,FD_LOGICAL(a0)
+	move.w	d1,cpm_sector
+	;move.w	d0,FD_SECTOR(a0)
+	;move.w	d1,FD_LOGICAL(a0)
 .exit:
 	rts
 
@@ -811,7 +816,7 @@ setsector:
 ; Return value: None
 ;
 setdma:
-	move.l	d1,fd_dma
+	move.l	d1,cpm_dma
 	rts
 
 ; Function 13 Read sector
@@ -822,19 +827,63 @@ setdma:
 ;	d0.w: 0 if no error, 1 if physical error
 ;
 readsector:
-	move.w	df0,d0
-	bsr	printword
-	bsr	printcr
-	move.w	df0+2,d0
-	bsr	printword
-	bsr	printcr
-	move.w	df0+4,d0
-	bsr	printword
-	bsr	printcr
-	move.w	df0+6,d0
-	bsr	printword
-	bsr	printcr
-.debug	jmp	.debug
+	;move.w	cpm_drive,d0
+	;bsr	printword
+	;bsr	printcr
+	;move.w	cpm_track,d0
+	;bsr	printword
+	;bsr	printcr
+	;move.w	cpm_sector,d0
+	;bsr	printword
+	;bsr	printcr
+	move.w	cpm_drive,d0
+	bsr	fd_select
+	; TODO: add disk change check
+	move.w	cpm_track,d0
+	bsr	fd_seek
+	clr.w	d0			; read
+	bsr	fd_rw_track
+	bsr	fd_decode_track
+	;bsr	fd_disk_change
+	bsr	fd_deselect
+	; copy cpm sector
+	;lea	fd_drive_table,a0
+	;move.w	fd_drive,d1
+	;lsl.w	#2,d1
+	;move.l	(a0,d1.w),a0
+	;move.w	FD_LOGICAL(a0),d0
+	;lsl.w	#7,d0			; multiply * 128 (cp/m sector size)
+
+	move.w	cpm_sector,d0
+	lsl.w	#7,d0			; multiply by 128 (cp/m sector size)
+	and.l	#$ffff,d0
+	; offset
+	;bsr	printlong
+	;bsr	printcr
+	;
+	lea	sector_data,a0
+	add.l	d0,a0
+	move.l	a0,d0
+	; sectordata + offset
+	;bsr	printlong
+	;bsr	printcr
+	;
+	move.l	cpm_dma,a1
+	; dma address
+	;move.l	a1,d0
+	;bsr	printlong
+	;bsr	printcr
+	;
+	move.w	#0,d1
+.copy:	;move.l	(a0)+,(a1)+
+	move.l	(a0)+,d0
+	;bsr	printlong
+	move.l  d0,(a1)+
+	addq.w	#4,d1
+	cmp.w	#128,d1
+	bne	.copy
+	;bsr	printcr
+	clr.w	d0
 	rts
 
 ; Function 14 Write sector: Not started
@@ -906,6 +955,7 @@ fd_select:
 	clr.w	fd_cache_ok
 .fd_select1:
 	move.w	d0,fd_drive
+	;move.w	fd_drive,d0
 	and.b	#$7f,CIAB+PRB	; motor on
 	move.b	#$f7,d1		; select drive
 	rol.b	d0,d1
@@ -988,15 +1038,15 @@ fd_step_direction:
 	and.b	#$01,d0
 	beq	.exit		; branch if new dir = forward
 	or.b	#$02,CIAB+PRB	; set direction backward
-	lea	stepbackward,a0
-	bsr	printstring
+	;lea	stepbackward,a0
+	;bsr	printstring
 	bra	.delay18ms
 .checkdir2:			; prev dir = backward
 	and.b	#$01,d0
 	bne	.exit		; branch if new dir = backward
 	and.b	#$fd,CIAB+PRB	; set direction forward
-	lea	stepforward,a0
-	bsr	printstring
+	;lea	stepforward,a0
+	;bsr	printstring
 .delay18ms:
 	move.w	#18,d0
 	bsr	delay
@@ -1103,10 +1153,10 @@ fd_seek:
 .loop:
 	bsr	fd_get_current_track	; exit if current track = track
 	; debug
-	bsr	printword
-	bsr	printcr
-	move.w	#1000,d0
-	bsr	delay
+	;bsr	printword
+	;bsr	printcr
+	;move.w	#1000,d0
+	;bsr	delay
 	bsr	fd_get_current_track	; exit if current track = track
 	; debug end
 	cmp.w	d0,d2
@@ -1273,6 +1323,7 @@ fd_decode_track:
 	; d6.w = current mfm track number
 	; d7.l = tmp
 
+	 movem.l d0-d7/a0-a3,-(sp)
 	;bsr	fd_get_current_track		; get current track number
 	;move.w	d0,d6
 	;move.w	FD_SIDE(a0),d0
@@ -1390,20 +1441,21 @@ fd_decode_track:
 .badsectorheader:
 	lea	bad_sector_header_str,a0
 	bsr	printstring
-	rts
+	bra	.exit
 .badsectorheaderchecksum:
 	lea	bad_sector_header_checksum_str,a0
 	bsr	printstring
-	rts
+	bra	.exit
 .toofewsectors:
 	lea	too_few_sectors_str,a0
 	bsr	printstring
-	rts
+	bra	.exit
 .badsectorchecksum:
 	lea	bad_sector_checksum_str,a0
 	bsr	printstring
-	rts
+	bra	.exit
 .exit:
+	movem.l (sp)+,d0-d7/a0-a3
 	rts
 
 fd_encode_track:
@@ -1562,11 +1614,19 @@ ctrl_key:
 ; floppy variables
 fd_drive:
 	dc.w	0
-fd_logged:
-	dc.w	0
 fd_cache_ok:
 	dc.w	0
-fd_dma:
+fd_cache_dirty:
+	dc.w	0
+cpm_drive:
+	dc.w	0
+cpm_logged:
+	dc.w	0
+cpm_track:
+	dc.w	0
+cpm_sector:
+	dc.w	0
+cpm_dma:
 	dc.l	0
 fd_drive_table:
 	dc.l	df0
@@ -1577,22 +1637,18 @@ df0:
 	dc.w	0	; track
 	dc.w	0	; side
 	dc.w	0	; sector
-	dc.w	0	; cp/m logical sector
 df1:
 	dc.w	0	; track
 	dc.w	0	; side
 	dc.w	0	; sector
-	dc.w	0	; cp/m logical sector
 df2:
 	dc.w	0	; track
 	dc.w	0	; side
 	dc.w	0	; sector
-	dc.w	0	; cp/m logical sector
 df3:
 	dc.w	0	; track
 	dc.w	0	; side
 	dc.w	0	; sector
-	dc.w	0	; cp/m logical sector
 
 
 ; floppy disk parameter header
@@ -1630,7 +1686,7 @@ floppy_alv:
 
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.27 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.28 ***",13,10
         dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
