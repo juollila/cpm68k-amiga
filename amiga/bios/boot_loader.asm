@@ -4,6 +4,7 @@
 LOAD_ADDRESS 	= $15000
 
 ; library call offsets
+SUPERSTATE	= -150
 DOIO		= -456
 ; standard io request offsets
 IO_MESSAGE	= 0
@@ -72,6 +73,10 @@ start:
 	clr.l	IO_LENGTH(a1)
 	jsr	DOIO(a6)
 
+	; change to supervisor state
+	move.l	$4,a6
+	jsr	SUPERSTATE(a6)
+	
 	; start cp/m
 	jmp	(a2)
 

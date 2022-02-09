@@ -23,6 +23,7 @@
 
 CUSTOM		= $dff000	; Start of custom chips
 CPMSTART	= $15000	; Start of CP/M
+CCPSTART	= $150bc	; Start of CCP
 BIOSSTART	= $1b000	; Start of BIOS
 
 ; Custom chip register offsets
@@ -121,7 +122,9 @@ CRB	= $f00	; Control register B
 ;	d0.w: $00
 ; Return value: d0.w: user/disk numbers
 ;
-_init:	lea	CIAA,a0
+_init:	;cmp.w	#0,bios_init_done
+	;bne	.done
+	lea	CIAA,a0
 	lea	CIAB,a1
 	lea	CUSTOM,a6
 	bsr	takeover
@@ -137,12 +140,13 @@ _init:	lea	CIAA,a0
 	; print bios string
 	lea	bios_str(pc),a0
 	bsr	printstring
-
+;.done:
 	move.w	#0,d0
 	bsr	fd_select
 	bsr	fd_sync
 	bsr	fd_deselect
 	clr.l	d0				; log on disk A, user 0
+	;move.w	#1,bios_init_done
 	rts					; return to BDOS
 
 
@@ -307,7 +311,7 @@ NUMBER_OF_FUNCTIONS	= 23
 
 biosbase:
 	dc.l	notimplemented ;_init
-	dc.l	notimplemented ;warmboot
+	dc.l	warmboot
 	dc.l	constatus
 	dc.l	conin
 	dc.l	conout
@@ -327,7 +331,7 @@ biosbase:
 	dc.l	getaddresstable
 	dc.l	notimplemented ;segiob
 	dc.l	notimplemented ;setiob
-	dc.l	notimplemented ;flush
+	dc.l	flush
 	dc.l	setexception
 
 waitblit:
@@ -352,7 +356,7 @@ notimplemented:
 ;	d0.w: $01
 ; Return value: None
 warmboot:
-	jmp	CPMSTART
+	jmp	CCPSTART
 
 ;
 ; Function 2: Console status
@@ -827,6 +831,19 @@ setdma:
 ;	d0.w: 0 if no error, 1 if physical error
 ;
 readsector:
+	cmp.w	#0,fd_cache_ok
+	beq	.readtrack
+	move.w	fd_drive,d0
+	cmp.w	cpm_drive,d0
+	bne	.readtrack
+	lea	fd_drive_table,a0
+	move.w	fd_drive,d1
+	lsl.w	#2,d1
+	move.l	(a0,d1.w),a0
+	move.w	FD_TRACK(a0),d0
+	cmp.w	cpm_track,d0
+	bne	.readtrack
+	bra	.cacheok
 	;move.w	cpm_drive,d0
 	;bsr	printword
 	;bsr	printcr
@@ -836,6 +853,14 @@ readsector:
 	;move.w	cpm_sector,d0
 	;bsr	printword
 	;bsr	printcr
+.readtrack
+	;lea	readtrackstr,a0
+	;bsr	printstring
+	;move.w	cpm_track,d0
+	;bsr	printbyte
+	;move.b	#':',d0
+	;bsr	printbyte
+	move.w	#0,fd_cache_ok
 	move.w	cpm_drive,d0
 	bsr	fd_select
 	; TODO: add disk change check
@@ -846,6 +871,13 @@ readsector:
 	bsr	fd_decode_track
 	;bsr	fd_disk_change
 	bsr	fd_deselect
+
+	move.w	#1,fd_cache_ok
+	;bra	.skip
+.cacheok:
+	;move.b	#'.',d0
+	;bsr	printchar
+;.skip:
 	; copy cpm sector
 	;lea	fd_drive_table,a0
 	;move.w	fd_drive,d1
@@ -919,7 +951,11 @@ getaddresstable:
 
 ; Function 19 Get I/O byte: Not needed at first phase
 ; Function 20 Set I/O byte: Not needed at first phase
-; Function 21 Flush buffers: Not started (will be dummy function)
+
+; Function 21 Flush buffers: Not started (dummy function)
+flush:
+	clr.w	d0
+	rts
 
 ; Function 22 Set exception handler address: Not started
 ;
@@ -1596,7 +1632,9 @@ copper:
 	dc.w	$ffff,$fffe
 
 ;color:	dc.w	$00f
-
+; misc variables
+;bios_init_done:
+;	dc.w	0
 ; keyboard variables
 key_index:
 	dc.w	16
@@ -1686,7 +1724,7 @@ floppy_alv:
 
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.28 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.29 ***",13,10
         dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
@@ -1715,6 +1753,8 @@ seektrack8:
 	dc.b	"Seek track 8", 13, 10, 0
 fetchtrackinfo:
 	dc.b	"Fetch track info", 13, 10, 0
+readtrackstr:
+	dc.b	13,10,"Reading track ",0
 	even
 
 ; keymap (raw code to ascii)
