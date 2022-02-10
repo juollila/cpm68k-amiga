@@ -24,6 +24,7 @@
 CUSTOM		= $dff000	; Start of custom chips
 CPMSTART	= $15000	; Start of CP/M
 CCPSTART	= $150bc	; Start of CCP
+CPMSTRING	= $19efe	; CP/M copyright string
 BIOSSTART	= $1b000	; Start of BIOS
 
 ; Custom chip register offsets
@@ -122,8 +123,7 @@ CRB	= $f00	; Control register B
 ;	d0.w: $00
 ; Return value: d0.w: user/disk numbers
 ;
-_init:	;cmp.w	#0,bios_init_done
-	;bne	.done
+_init:	
 	lea	CIAA,a0
 	lea	CIAB,a1
 	lea	CUSTOM,a6
@@ -140,13 +140,19 @@ _init:	;cmp.w	#0,bios_init_done
 	; print bios string
 	lea	bios_str(pc),a0
 	bsr	printstring
-;.done:
+	; print cp/m string
+	; we do not utilize cp/m loader thus cp/m string should be printed separately 
+	lea	CPMSTRING,a0
+	bsr	printstring
+	bsr	printcr
 	move.w	#0,d0
 	bsr	fd_select
 	bsr	fd_sync
 	bsr	fd_deselect
+	;lea	bios_debug,a0
+	;move.l	a0,debug_ptr
+	move	#$2000,sr
 	clr.l	d0				; log on disk A, user 0
-	;move.w	#1,bios_init_done
 	rts					; return to BDOS
 
 
@@ -327,7 +333,7 @@ biosbase:
 	dc.l	notimplemented ;write
 	dc.l	notimplemented ;listst
 	dc.l	sectortranslate
-	dc.l	notimplemented ;setdma
+	dc.l	notimplemented ;
 	dc.l	getaddresstable
 	dc.l	notimplemented ;segiob
 	dc.l	notimplemented ;setiob
@@ -402,6 +408,9 @@ conin:	bsr	constatus
 ; Return value: None
 ;
 conout:
+	;move.l	debug_ptr,a0
+	;move.b	d1,(a0)+
+	;move.l	a0,debug_ptr
 	and.l	#$000000ff,d1	; use only low byte
 	cmp.w	#0,.escseq	; check if esc sequence is ongoing
 	bne	.checksequence
@@ -637,7 +646,7 @@ keyboard_int:
 	move.b	1(a0,d0),d1
 	bra	.storekey
 .noshift:
-	move.b	0(a0,d0),d1
+	move.b  0(a0,d0),d1
 .storekey:
 	move.w	key_index.l,d0
 	bmi	.exit
@@ -947,7 +956,7 @@ getaddresstable:
 .table:
 	dc.w	1	; count
 	dc.l	$400	; base address of first region
-	dc.l	CPMSTART-$400
+	dc.l	CPMSTART-$408
 
 ; Function 19 Get I/O byte: Not needed at first phase
 ; Function 20 Set I/O byte: Not needed at first phase
@@ -1633,8 +1642,10 @@ copper:
 
 ;color:	dc.w	$00f
 ; misc variables
-;bios_init_done:
-;	dc.w	0
+;debug_ptr:
+;	dc.l	0
+;bios_debug:
+;	blk.b	1024
 ; keyboard variables
 key_index:
 	dc.w	16
@@ -1724,8 +1735,8 @@ floppy_alv:
 
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.29 ***",13,10
-        dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,0
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.30 ***",13,10
+        dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
 dma_error_str:
