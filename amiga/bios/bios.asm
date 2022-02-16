@@ -84,12 +84,12 @@ BLOCKSIZE	= 2048	; CPM FS block size
 DIRENTRIES	= 128	; CPM directory entries
 DRIVES		= 2	; Only 2 floppy drives supported (Amiga can support upto 4)
 MFM_TRACKSIZE	= 13630 ; MFM track size
+GAPSIZE		= 1660  ; 13630 - (11*(64+512+512)) - 4 = 1658, 1656 is divisible by 4
 
 ; Offsets in floppy drive structure
 FD_TRACK	= 0
 FD_SIDE		= 2
 FD_SECTOR	= 4
-FD_LOGICAL	= 6
 
 ; CIA base addresses
 CIAA	= $bfe001
@@ -1476,13 +1476,6 @@ fd_decode_track:
 	bcc	.toofewsectors
 	bra	.skip
 
-	
-	
-	
-	
-	
-	
-	
 .badsectorheader:
 	lea	bad_sector_header_str,a0
 	bsr	printstring
@@ -1503,7 +1496,191 @@ fd_decode_track:
 	movem.l (sp)+,d0-d7/a0-a3
 	rts
 
+; disk write logic:
+;
+; cached:
+;   - no: read track
+;   - yes: is track same?
+;              - yes: continue
+;              - no: read track
+; write sector to sector data
+; set dirty bit
+;
+;
+; flush logic:
+;
+; is dirty bit set:
+;    - no: return
+;    - yes: encode track
+;           write track
+;
+
+; Encode track
+;
+; Entry parameters: None
+; Returns: None
 fd_encode_track:
+	; a0 = current position (mfm track)
+	; a1 = current position of sector data
+	; d0.l = odd
+	; d1.l = even
+	; d3.l = number of sectors encoded
+	; d4.l = sector info $ffTTSSSG
+	;        $ff = Amiga v1.0 format
+	;        TT = track number ( 3 means cylinder 1, head 1)
+	;        SS = sector number (0 to 10)
+	;        SG = sectors until end of writing (including current one)
+	; d5.l = checksum
+	; d6.l = tmp
+	; d7.l = tmp
+
+	movem.l d0-d7/a0-a1,-(sp)
+	bsr	fd_get_current_track		; get current track number
+	move.l	d0,d4
+	and.l	#$000000ff,d4			; 000000TT sector header info
+	moveq.l	#16,d7
+	lsl.l	d7,d4				; 00TT0000
+	or.l	#$ff000000,d4			; ffTT0000
+	
+	lea	mfm_track,a0			; set mfm buffer address
+	lea	sector_data,a1
+
+	; fill gap
+	move.l	#0,d7
+.fillgap:
+	move.l	#$aaaaaaaa,(a0,d7.w)
+	add.w	#4,d7
+	cmp.w	#GAPSIZE,d7
+	bne	.fillgap
+
+	clr.l	d3				; number of sectors encoded = 0
+	add.l	d7,a0				; current position = mfm_track + gapsize
+.fillsector:
+
+	; fill 2 x zero words and 2 x sync words
+	moveq.l	#1,d7				; check previous bit
+	and.l	-4(a0),d7
+	beq	.clockbit1
+	move.l	#$2aaaaaaa,(a0)			; 2 x zero words
+	bra	.clockbit2
+.clockbit1:
+	move.l	#$aaaaaaaa,(a0)			; 2 x zero words
+.clockbit2:
+	move.l	#$44894489,4(a0)		; 2 x sync words
+
+	; update sector header info
+	and.l	#$ffff0000,d4			; ffTT0000 sector header info
+	move.l	d3,d7
+	lsl.w	#8,d7
+	or.l	d7,d4				; ffTTSS00
+	moveq.l	#11,d7
+	sub.l	d3,d7
+	or.l	d7,d4				; ffTTSSSG
+
+	move.l	d4,d1				; even (sector header info)
+	move.l	d4,d0				; odd = even >> 1
+	lsr.l	#1,d0
+
+	and.l	#$55555555,d1			; even = even & $55555555
+	move.l	d1,12(a0)
+
+	and.l	#$55555555,d0			; odd = odd & $55555555
+	move.l	d0,8(a0)
+
+	; calculate header checksum
+	clr.l	d5
+	eor.l	d0,d5
+	eor.l	d1,d5
+
+	; save header checksum
+	move.l	d5,48(a0)
+	lsr.l	#1,d5				; odd = even >> 1
+	move.l	d5,52(a0)
+
+	; fill rest of header with zeroes
+	clr.l	d7
+	move.l	d7,16(a0)	
+	move.l	d7,20(a0)	
+	move.l	d7,24(a0)	
+	move.l	d7,28(a0)	
+	move.l	d7,32(a0)	
+	move.l	d7,36(a0)	
+	move.l	d7,40(a0)	
+	move.l	d7,44(a0)
+
+	; copy sector data
+	clr.l	d7				; offset to odd data
+	move.l	#512,d6				; offset to even data
+	clr.l	d5				; clear checksum
+.copydata:
+	move.l	(a1,d7.w),d1			; copy from sector data to even
+	move.l	d1,d0				; odd = even >> 1
+	lsr.l	#1,d0
+	and.l	#$55555555,d0			; odd = odd & $55555555
+	and.l	#$55555555,d1			; even = even & $55555555
+	move.l	d0,64(a0,d7.w)			; copy odd data
+	move.l	d1,64(a0,d6.w)			; copy even data
+	addq.l	#4,d7				; update offsets
+	addq.l	#4,d6
+	eor.l	d0,d5				; update checksum
+	eor.l	d1,d5
+	cmp.w	#512,d7
+	bne	.copydata
+
+	; save data checksum
+	move.l	d5,56(a0)
+	lsr.l	#1,d5				; odd = even >> 1
+	move.l	d5,60(a0)
+
+	; mfm encode
+	; d0.l = previous
+	; d1.l = v
+	; d5.l = mask1
+	; d6.l = mask2
+	; d7.l = offset
+	move.l	4(a0),d0			; previous
+	clr.l	d7
+.encode:
+	move.l	8(a0,d7.w),d1			; copy long word from mfm data
+	and.l	#$55555555,d1			; mfm data = mfm data & $55555555
+	ror.l	#1,d0				; previous << 31
+	and.l	#$80000000,d0
+	move.l	d1,d5				; v >> 1
+	lsr.l	#1,d5
+	or.l	d0,d5				; mask1 = (previous << 31) | (v >> 1)
+	move.l	d1,d6
+	lsl.l	#1,d6				; mask2 = v << 1
+	eor.l	#$ffffffff,d5			; mask1 = mask1 xor $ffffffff
+	eor.l	#$ffffffff,d6			; mask1 = mask2 xor $ffffffff
+	and.l	d5,d6				; mask1 & mask2
+	and.l	#$aaaaaaaa,d6			; & $aaaaaaaa
+	move.l	d1,d0				; previous = mfm data
+	or.l	d6,d1
+	move.l	d1,8(a0,d7.w)
+	addq.l	#4,d7
+	cmp.l	#1080,d7
+	bne	.encode
+
+	; update pointers
+	add.l	#512,a1
+	add.l	#1088,a0
+
+	; check if last sector
+	addq.l	#1,d3
+	cmp.l	#11,d3
+	bne	.fillsector
+
+	moveq.l	#1,d7				; check previous bit
+	and.l	-4(a0),d7
+	beq	.clockbit3
+	move.l	#$2aaaaaaa,(a0)			; 2 x zero words
+	bra	.clockbit4
+.clockbit3:
+	move.l	#$aaaaaaaa,(a0)			; 2 x zero words
+.clockbit4:	
+	
+	movem.l (sp)+,d0-d7/a0-a1
+
 	rts
 
 ;
