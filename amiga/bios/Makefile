@@ -14,6 +14,9 @@ boot.bin: boot_loader.asm cpm.bin
 adf: boot-with-checksum.bin
 	cp ../adf/cpm-blank.adf cpm-boot.adf
 	mkfs.cpm -f amiga -b boot-with-checksum.bin cpm-boot.adf
+	cpmcp -f amiga cpm-boot.adf ../../cpm/disks/DISK1/STAT.REL 0:
+	cpmcp -f amiga cpm-boot.adf ../../cpm/disks/DISK1/PIP.REL 0:
+	cpmcp -f amiga cpm-boot.adf ../../cpm/disks/DISK1/README.TXT 0:
 
 clean:
 	rm -f *.bin

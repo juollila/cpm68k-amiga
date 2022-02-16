@@ -84,7 +84,7 @@ BLOCKSIZE	= 2048	; CPM FS block size
 DIRENTRIES	= 128	; CPM directory entries
 DRIVES		= 2	; Only 2 floppy drives supported (Amiga can support upto 4)
 MFM_TRACKSIZE	= 13630 ; MFM track size
-GAPSIZE		= 1660  ; 13630 - (11*(64+512+512)) - 4 = 1658, 1656 is divisible by 4
+GAPSIZE		= 1656  ; 13630 - (11*(64+512+512)) - 4 = 1658, 1656 is divisible by 4
 
 ; Offsets in floppy drive structure
 FD_TRACK	= 0
@@ -330,7 +330,7 @@ biosbase:
 	dc.l	setsector
 	dc.l	setdma
 	dc.l	readsector
-	dc.l	notimplemented ;write
+	dc.l	writesector
 	dc.l	notimplemented ;listst
 	dc.l	sectortranslate
 	dc.l	notimplemented ;
@@ -840,50 +840,6 @@ setdma:
 ;	d0.w: 0 if no error, 1 if physical error
 ;
 readsector:
-	cmp.w	#0,fd_cache_ok
-	beq	.readtrack
-	move.w	fd_drive,d0
-	cmp.w	cpm_drive,d0
-	bne	.readtrack
-	lea	fd_drive_table,a0
-	move.w	fd_drive,d1
-	lsl.w	#2,d1
-	move.l	(a0,d1.w),a0
-	move.w	FD_TRACK(a0),d0
-	cmp.w	cpm_track,d0
-	bne	.readtrack
-	bra	.cacheok
-	;move.w	cpm_drive,d0
-	;bsr	printword
-	;bsr	printcr
-	;move.w	cpm_track,d0
-	;bsr	printword
-	;bsr	printcr
-	;move.w	cpm_sector,d0
-	;bsr	printword
-	;bsr	printcr
-.readtrack
-	;lea	readtrackstr,a0
-	;bsr	printstring
-	;move.w	cpm_track,d0
-	;bsr	printbyte
-	;move.b	#':',d0
-	;bsr	printbyte
-	move.w	#0,fd_cache_ok
-	move.w	cpm_drive,d0
-	bsr	fd_select
-	; TODO: add disk change check
-	move.w	cpm_track,d0
-	bsr	fd_seek
-	clr.w	d0			; read
-	bsr	fd_rw_track
-	bsr	fd_decode_track
-	;bsr	fd_disk_change
-	bsr	fd_deselect
-
-	move.w	#1,fd_cache_ok
-	;bra	.skip
-.cacheok:
 	;move.b	#'.',d0
 	;bsr	printchar
 ;.skip:
@@ -894,6 +850,7 @@ readsector:
 	;move.l	(a0,d1.w),a0
 	;move.w	FD_LOGICAL(a0),d0
 	;lsl.w	#7,d0			; multiply * 128 (cp/m sector size)
+	bsr	fd_read_track
 
 	move.w	cpm_sector,d0
 	lsl.w	#7,d0			; multiply by 128 (cp/m sector size)
@@ -927,7 +884,125 @@ readsector:
 	clr.w	d0
 	rts
 
-; Function 14 Write sector: Not started
+fd_read_track:
+	cmp.w	#0,fd_cache_ok
+	beq	.readtrack
+	move.w	fd_drive,d0
+	cmp.w	cpm_drive,d0
+	bne	.readtrack
+	lea	fd_drive_table,a0
+	move.w	fd_drive,d1
+	lsl.w	#2,d1
+	move.l	(a0,d1.w),a0
+	move.w	FD_TRACK(a0),d0
+	cmp.w	cpm_track,d0
+	bne	.readtrack
+	bra	.cacheok
+	;move.w	cpm_drive,d0
+	;bsr	printword
+	;bsr	printcr
+	;move.w	cpm_track,d0
+	;bsr	printword
+	;bsr	printcr
+	;move.w	cpm_sector,d0
+	;bsr	printword
+	;bsr	printcr
+.readtrack
+	cmp.w	#0,fd_dirty
+	beq	.readtrack2
+	bsr	fd_flush
+.readtrack2:
+	;move.b	#".",d0
+	;bsr	printchar
+	;move.w	cpm_track,d0
+	;bsr	printbyte
+	;lea	readtrackstr,a0
+	;bsr	printstring
+	;move.w	cpm_track,d0
+	;bsr	printbyte
+	;move.b	#':',d0
+	;bsr	printbyte
+	move.w	#0,fd_cache_ok
+	move.w	cpm_drive,d0
+	bsr	fd_select
+	; TODO: add disk change check
+	move.w	cpm_track,d0
+	bsr	fd_seek
+	clr.w	d0			; read
+	bsr	fd_rw_track
+	bsr	fd_decode_track
+;	bsr	fd_encode_track
+;.debug:	jmp	.debug
+	;bsr	fd_disk_change
+	bsr	fd_deselect
+
+	move.w	#1,fd_cache_ok
+	;bra	.skip
+.cacheok:
+	rts	
+
+; Function 14 Write sector
+;
+; Entry parameters:
+;	d0.w: $e
+;	d1.w: 0 = normal write, 1 = directory sector, 2 = new block
+; Return value:
+;	d0.w: 0 if no error, 1 if physical error
+;
+writesector:
+	move.w	d1,fd_write
+	bsr	fd_read_track
+	;move.w	d1,d0
+	;add.w	#65,d0
+	;bsr	printchar
+	move.w	cpm_sector,d0
+	lsl.w	#7,d0			; multiply by 128 (cp/m sector size)
+	and.l	#$ffff,d0
+	lea	sector_data,a0
+	add.l	d0,a0
+	move.l	cpm_dma,a1
+	move.w	#0,d1
+.copy:
+	move.l	(a1)+,d0
+	move.l  d0,(a0)+
+	addq.w	#4,d1
+	cmp.w	#128,d1
+	bne	.copy
+	move.b	#1,fd_dirty
+	move.w	cpm_track,fd_dirty_track
+	move.w	cpm_drive,fd_dirty_drive
+	cmp.w	#1,fd_write
+	bne	.exit
+	bsr	fd_flush
+.exit:
+	clr.w	d0
+	rts
+
+fd_flush:
+	;move.w	fd_dirty_track,d0
+	;bsr	printbyte
+	move.w	fd_dirty_drive,d0
+	bsr	fd_select
+	;move.b	#"2",d0
+	;bsr	printchar
+	; TODO: add disk change check
+	move.w	fd_dirty_track,d0
+	bsr	fd_seek
+	;move.b	#"3",d0
+	;bsr	printchar
+	bsr	fd_encode_track
+	;move.b	#"4",d0
+	;bsr	printchar
+	move.w	#$4000,d0			; write
+	bsr	fd_rw_track
+	;move.b	#"5",d0
+	;bsr	printchar
+	;bsr	printcr
+	bsr	fd_deselect
+	move.w	#0,fd_dirty
+	rts
+
+
 ; Function 15 Return list status: Not needed at first phase
 
 ; Function 16 Sector translate
@@ -1266,6 +1341,7 @@ fd_wait_dma:
 ; Entry parameters: d0.w ($4000=write, 0=read)
 ; Return value: None
 fd_rw_track:
+	move.w	d0,fd_rw
 	bsr	fd_wait_motor		; check that motor is on
 	beq	.ok1
 	lea	motor_error_str(pc),a0
@@ -1276,7 +1352,8 @@ fd_rw_track:
 	lea	mfm_track(pc),a1	; set buffer address
 	move.l	a1,CUSTOM+DSKPTH
 	move.w	#($8000+(MFM_TRACKSIZE/2)),d1	; dma enable + buffer size in words
-	or.w	#$0000,d1			; set read TODO: add write support
+	move.w	fd_rw,d0
+	or.w	d0,d1			; set read/write mode
 	move.w	d1,CUSTOM+DSKLEN	; transfer is triggered by writing reg twice
 	move.w	d1,CUSTOM+DSKLEN
 	bsr	fd_wait_dma
@@ -1593,9 +1670,9 @@ fd_encode_track:
 	eor.l	d1,d5
 
 	; save header checksum
-	move.l	d5,48(a0)
-	lsr.l	#1,d5				; odd = even >> 1
 	move.l	d5,52(a0)
+	lsr.l	#1,d5				; odd = even >> 1
+	move.l	d5,48(a0)
 
 	; fill rest of header with zeroes
 	clr.l	d7
@@ -1628,9 +1705,9 @@ fd_encode_track:
 	bne	.copydata
 
 	; save data checksum
-	move.l	d5,56(a0)
-	lsr.l	#1,d5				; odd = even >> 1
 	move.l	d5,60(a0)
+	lsr.l	#1,d5				; odd = even >> 1
+	move.l	d5,56(a0)
 
 	; mfm encode
 	; d0.l = previous
@@ -1680,7 +1757,7 @@ fd_encode_track:
 .clockbit4:	
 	
 	movem.l (sp)+,d0-d7/a0-a1
-
+;.debug	jmp	.debug
 	rts
 
 ;
@@ -1838,6 +1915,16 @@ ctrl_key:
 	dc.w	0
 
 ; floppy variables
+fd_write:
+	dc.w	0
+fd_dirty:
+	dc.w	0
+fd_dirty_drive:
+	dc.w	0
+fd_dirty_track:
+	dc.w	0
+fd_rw:
+	dc.w	0
 fd_drive:
 	dc.w	0
 fd_cache_ok:
@@ -1912,7 +1999,7 @@ floppy_alv:
 
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.30 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.33 ***",13,10
         dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
