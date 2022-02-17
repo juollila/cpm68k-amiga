@@ -1,7 +1,7 @@
 ; Boot loader for SturmBIOS and CP/M-68k
 ;
 
-LOAD_ADDRESS 	= $15000
+LOAD_ADDRESS 	= $60000
 
 ; library call offsets
 SUPERSTATE	= -150

@@ -22,10 +22,10 @@
 ;
 
 CUSTOM		= $dff000	; Start of custom chips
-CPMSTART	= $15000	; Start of CP/M
-CCPSTART	= $150bc	; Start of CCP
-CPMSTRING	= $19efe	; CP/M copyright string
-BIOSSTART	= $1b000	; Start of BIOS
+CPMSTART	= $60000	; Start of CP/M
+CCPSTART	= $600bc	; Start of CCP
+CPMSTRING	= $64f50	; CP/M copyright string
+BIOSSTART	= $66000	; Start of BIOS
 
 ; Custom chip register offsets
 DMACONR = $002	; DMA control read
@@ -1999,7 +1999,7 @@ floppy_alv:
 
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.33 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.34 ***",13,10
         dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
