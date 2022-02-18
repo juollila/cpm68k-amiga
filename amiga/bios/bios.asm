@@ -273,6 +273,7 @@ notimplemented:
 ;	d0.w: $01
 ; Return value: None
 warmboot:
+	bsr	flush
 	jmp	CCPSTART
 
 ;
@@ -724,6 +725,7 @@ setdma:
 ;
 readsector:
 	bsr	fd_read_track		; read track
+	bne	.error			; branch if error
 
 	move.w	cpm_sector,d0		; calculate src address in sector data
 	lsl.w	#7,d0			; multiply by 128 (cp/m sector size)
@@ -741,6 +743,9 @@ readsector:
 	bne	.copy
 	clr.w	d0			; no error
 	rts
+.error:
+	move.w	#1,d0
+	rts
 
 
 ; Function 14 Write sector
@@ -754,6 +759,7 @@ readsector:
 writesector:
 	move.w	d1,fd_write		; save write type
 	bsr	fd_read_track		; read track (if needed)
+	bne	.error			; branch if error
 
 	move.w	cpm_sector,d0		; calculate destination address in sector data
 	lsl.w	#7,d0			; multiply by 128 (cp/m sector size)
@@ -776,8 +782,12 @@ writesector:
 	cmp.w	#1,fd_write		; flush if directory sector
 	bne	.exit
 	bsr	fd_flush
+	bne	.error
 .exit:
 	clr.w	d0			; no error
+	rts
+.error:
+	move.w	#1,d0
 	rts
 
 ; Function 15 Return list status: Not needed at first phase
@@ -814,8 +824,16 @@ getaddresstable:
 ; Function 20 Set I/O byte: Not needed at first phase
 
 ; Function 21 Flush buffers: Not started (dummy function)
+;
+;	Entry parameters: d0.w: $15
+;	Return value: d0.w: 0 if no error, $ffff if physical error
 flush:
+	bsr	fd_flush
+	bne	.error
 	clr.w	d0
+	rts
+.error:
+	move.w	#-1,d0
 	rts
 
 ; Function 22 Set exception handler address: Not started
@@ -838,7 +856,11 @@ setexception:
 ; disk routines
 ;
 
-
+; read track
+;
+; Input parameters: None
+; Returns: Zero flag set if successful
+;
 fd_read_track:
 	cmp.w	#0,fd_cache_ok
 	beq	.readtrack
@@ -854,9 +876,8 @@ fd_read_track:
 	bne	.readtrack
 	bra	.cacheok
 .readtrack
-	cmp.w	#0,fd_dirty
-	beq	.readtrack2
 	bsr	fd_flush
+	bne	.error			; branch if error
 .readtrack2:
 	move.w	#0,fd_cache_ok
 	move.w	cpm_drive,d0
@@ -866,14 +887,25 @@ fd_read_track:
 	bsr	fd_seek
 	clr.w	d0			; read
 	bsr	fd_rw_track
+	bne	.error			; branch if error
 	bsr	fd_decode_track
+	bne	.error			; branch if not successful
 	bsr	fd_deselect
 
 	move.w	#1,fd_cache_ok
 .cacheok:
-	rts	
+	clr.w	d0
+	rts
+.error:
+	bsr	fd_deselect
+	move.b	#1,d0
+	rts
 
+; Input parameters: None
+; Returns: zero flag if successful
 fd_flush:
+	cmp.w	#0,fd_dirty
+	beq	.exit
 	move.w	fd_dirty_drive,d0
 	bsr	fd_select
 	; TODO: add disk change check
@@ -882,8 +914,14 @@ fd_flush:
 	bsr	fd_encode_track
 	move.w	#$4000,d0			; write
 	bsr	fd_rw_track
+	bne	.error
 	bsr	fd_deselect
 	move.w	#0,fd_dirty
+.exit:
+	rts
+.error:
+	bsr	fd_deselect
+	move.b	#1,d0
 	rts
 
 
@@ -1112,7 +1150,7 @@ fd_wait_motor:
 	beq	.exit 
 	btst.b	#1,CIAB+ICR		; check timer B interrupt
 	beq	.wait
-	moveq	#1,d0			; clear zero flag
+	moveq	#1,d0
 	rts
 .exit:
 	clr.b	CIAB+CRA		; disable timer A in CIAB
@@ -1133,7 +1171,7 @@ fd_wait_dma:
 	bne	.exit 
 	btst.b	#1,CIAB+ICR		; check timer B interrupt
 	beq	.wait
-	moveq	#1,d0			; clear zero flag
+	moveq	#1,d0
 	rts
 .exit:
 	clr.b	CIAB+CRA		; disable timer A in CIAB
@@ -1145,13 +1183,14 @@ fd_wait_dma:
 ; read/write track
 ;
 ; Entry parameters: d0.w ($4000=write, 0=read)
-; Return value: None
+; Return value: Zero flag set if successful
 fd_rw_track:
 	move.w	d0,fd_rw
 	bsr	fd_wait_motor		; check that motor is on
 	beq	.ok1
 	lea	motor_error_str(pc),a0
 	bsr	printstring
+	move.b	#1,d0
 	rts
 .ok1:
 	move.w	#$4000,CUSTOM+DSKLEN	; dma disable + read
@@ -1167,10 +1206,12 @@ fd_rw_track:
 	lea	dma_error_str(pc),a0
 	bsr	printstring
 	move.w	#$4000,CUSTOM+DSKLEN	; dma disable + read
+	move.b	#1,d0
 	rts
 .ok2:
 	move.w	#$4000,CUSTOM+DSKLEN	; dma disable + read
 	move.w	#2,CUSTOM+INTREQ	; clear disk dma interrupt
+	clr.w	d0
 	rts
 
 ; mfm decode long
@@ -1232,7 +1273,8 @@ fd_decode_long:
 ; decode track
 ;
 ; Entry parameters: None
-; Returns: None
+; Returns: Zero flag set if successful
+;
 fd_decode_track:
 	; a0 = current position (mfm track)
 	; a1 = destination (current position of sector data)
@@ -1286,9 +1328,10 @@ fd_decode_track:
 	move.l	d4,d5				; check sector number (should be 0-10)
 	and.l	#$ff00,d5
 	lsr.w	#8,d5
-	;cmp.w	#11,d5
-	;bcc	.badsectorheader
-	; TODO: add track check
+	cmp.w	#11,d5
+	bcc	.badsectorheader
+	cmp.w	#0,d5
+	bcs	.badsectorheader
 
 	; decode sector label
 	move.w	#16,d2				; offset to even long
@@ -1349,19 +1392,20 @@ fd_decode_track:
 .badsectorheader:
 	lea	bad_sector_header_str,a0
 	bsr	printstring
-	bra	.exit
+	bra	.exit0
 .badsectorheaderchecksum:
 	lea	bad_sector_header_checksum_str,a0
 	bsr	printstring
-	bra	.exit
+	bra	.exit0
 .toofewsectors:
 	lea	too_few_sectors_str,a0
 	bsr	printstring
-	bra	.exit
+	bra	.exit0
 .badsectorchecksum:
 	lea	bad_sector_checksum_str,a0
 	bsr	printstring
-	bra	.exit
+.exit0:
+	move.b	#1,d0
 .exit:
 	movem.l (sp)+,d0-d7/a0-a3
 	rts
@@ -1449,15 +1493,12 @@ fd_encode_track:
 	move.l	d5,48(a0)
 
 	; fill rest of header with zeroes
-	clr.l	d7
-	move.l	d7,16(a0)	
-	move.l	d7,20(a0)	
-	move.l	d7,24(a0)	
-	move.l	d7,28(a0)	
-	move.l	d7,32(a0)	
-	move.l	d7,36(a0)	
-	move.l	d7,40(a0)	
-	move.l	d7,44(a0)
+	move.w	#16,d7
+.clear:
+	move.l	#0,(a0,d7.w)
+	addq.w	#4,d7
+	cmp.w	#48,d7
+	bne	.clear
 
 	; copy sector data
 	clr.l	d7				; offset to odd data
@@ -1667,12 +1708,6 @@ copper:
 	dc.w	$e2,0
 	dc.w	$ffff,$fffe
 
-;color:	dc.w	$00f
-; misc variables
-;debug_ptr:
-;	dc.l	0
-;bios_debug:
-;	blk.b	1024
 ; keyboard variables
 key_index:
 	dc.w	16
@@ -1772,7 +1807,7 @@ floppy_alv:
 
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.34 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.37 ***",13,10
         dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
