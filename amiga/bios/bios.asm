@@ -145,100 +145,13 @@ _init:
 	lea	CPMSTRING,a0
 	bsr	printstring
 	bsr	printcr
-	move.w	#0,d0
+	move.w	#0,d0				; select drive A: (0)
 	bsr	fd_select
-	bsr	fd_sync
-	bsr	fd_deselect
-	;lea	bios_debug,a0
-	;move.l	a0,debug_ptr
-	move	#$2000,sr
+	bsr	fd_sync				; synchronize drive
+	bsr	fd_deselect			; deselect drive
+	move	#$2000,sr			; probably not needed
 	clr.l	d0				; log on disk A, user 0
 	rts					; return to BDOS
-
-
-	lea	fetchtrackinfo,a0
-	bsr	printstring
-	bsr	fd_rw_track
-	move.w	mfm_track,d0
-	bsr	printword
-	bsr	printcr
-	lea	mfm_track+2,a0
-	move.w	#4,d2
-	bsr	fd_decode_long
-	bsr	printlong
-	bsr	printcr
-
-	lea	seektrack0,a0
-	bsr	printstring
-	move.l	#$0,d0
-	bsr	fd_seek
-
-	lea	fetchtrackinfo,a0
-	bsr	printstring
-	bsr	fd_rw_track
-	move.w	mfm_track,d0
-	bsr	printword
-	bsr	printcr
-	lea	mfm_track+2,a0
-	move.w	#4,d2
-	bsr	fd_decode_long
-	bsr	printlong
-	bsr	printcr
-
-	bsr	fd_decode_track
-	lea	sector_data,a0
-	clr.w	d7
-.loop:	move.b	(a0)+,d0
-;	cmp.b	#$20,d1
-;	bcs	.controlch
-;	cmp.b	#$7f,d1
-;	bcc	.controlch
-
-	cmp.b	#32,d0
-	bcs	.controlch
-	cmp.b	#127,d0
-	bcc	.controlch
-	bra	.print
-.controlch:
-	move.b	#'.',d0
-.print:
-	bsr	printchar
-	addq.w	#1,d7
-	cmp.w	#512,d7
-	bne	.loop
-	
-
-
-	;lea	seektrack5,a0
-	;bsr	printstring
-	;move.l	#5,d0
-	;bsr	fd_seek
-
-	;lea	fetchtrackinfo,a0
-	;bsr	printstring
-	;bsr	fd_rw_track
-	;move.w	mfm_track,d0
-	;bsr	printword
-	;bsr	printcr
-	;lea	mfm_track+2,a0
-	;move.w	#4,d2
-	;bsr	fd_decode_long
-	;bsr	printlong
-	;bsr	printcr
-	
-	bra	dosomestuff
-
-	; TODO: setting up trap handler, internal variables (e.g. iobyte)
-	; move.l	#traphandler,$8c	; set trap 3 handler
-	clr.l	d0			; login drive A, user 0
-	rts
-
-dosomestuff:
-.skip:
-	bsr	conin
-	move.w	d0,d1
-	bsr	conout
-	bra	.skip
 
 takeover:
 	; take over system
@@ -305,8 +218,6 @@ traphandler:
 	cmp	#NUMBER_OF_FUNCTIONS,d0
 	bcc	.skip
 	lsl	#2,d0			; multiply by 4
-	;move.l	6(pc,d0),a0
-	;lea	notimplemented,a0
 	lea	biosbase,a0
 	move.l	(a0,d0.w),a0
 	jsr	(a0)
@@ -316,7 +227,7 @@ traphandler:
 NUMBER_OF_FUNCTIONS	= 23
 
 biosbase:
-	dc.l	notimplemented ;_init
+	dc.l	_init
 	dc.l	warmboot
 	dc.l	constatus
 	dc.l	conin
@@ -324,7 +235,7 @@ biosbase:
 	dc.l	notimplemented ;listchar
 	dc.l	notimplemented ;auxout
 	dc.l	notimplemented ;auxin
-	dc.l	notimplemented ;home
+	dc.l	home
 	dc.l	setdrive
 	dc.l	settrack
 	dc.l	setsector
@@ -408,9 +319,6 @@ conin:	bsr	constatus
 ; Return value: None
 ;
 conout:
-	;move.l	debug_ptr,a0
-	;move.b	d1,(a0)+
-	;move.l	a0,debug_ptr
 	and.l	#$000000ff,d1	; use only low byte
 	cmp.w	#0,.escseq	; check if esc sequence is ongoing
 	bne	.checksequence
@@ -751,25 +659,15 @@ home:
 ;	d0.l: Address of selected drive's DPH
 ;
 setdrive:
-	;bsr	printword
-	;bsr	printcr
-	;move.b	d1,d0
-	;bsr	printbyte
-	;bsr	printcr
-	;move.b	d1,d0
-	;bsr	printbyte
-	;bsr	printcr
 	moveq	#0,d0			; no DPH
 	cmp.b	#0,d1
 	bcs	.exit
 	cmp.b	#DRIVES,d1
 	bcc	.exit
 	and.w	#$f,d1
-	;move.w	d1,fd_drive
 	move.w	d1,cpm_drive
 	and.w	#$ffff,d2
 	move.w	d2,cpm_logged
-	;move.w	d2,fd_logged
 	move.l	#floppy_dph,d0
 .exit
 	rts
@@ -788,11 +686,6 @@ settrack:
 	cmp.w	#TRACKS,d1
 	bcc	.exit
 	move.w	d1,cpm_track
-	;lea	fd_drive_table,a0
-	;move.w	fd_drive,d0
-	;lsl.w	#2,d0
-	;move.l	(a0,d0.w),a0
-	;move.w	d1,FD_TRACK(a0)
 .exit:
 	rts
 
@@ -805,19 +698,9 @@ settrack:
 ; Return value: None
 ;
 setsector:
-	;lea	fd_drive_table,a0
-	;move.w	fd_drive,d0
-	;lsl.w	#2,d0
-	;move.l	(a0,d0.w),a0
-	;move.w	d1,d0
-	;bmi	.exit
-	;lsr.w	#2,d0		; divide by 4, one sector contains 4 CP/M logical sectors
-	;cmp.w	#SECTORS,d0
 	cmp.w	#(TRACKSIZE/128),d1
 	bcc	.exit
 	move.w	d1,cpm_sector
-	;move.w	d0,FD_SECTOR(a0)
-	;move.w	d1,FD_LOGICAL(a0)
 .exit:
 	rts
 
@@ -840,106 +723,25 @@ setdma:
 ;	d0.w: 0 if no error, 1 if physical error
 ;
 readsector:
-	;move.b	#'.',d0
-	;bsr	printchar
-;.skip:
-	; copy cpm sector
-	;lea	fd_drive_table,a0
-	;move.w	fd_drive,d1
-	;lsl.w	#2,d1
-	;move.l	(a0,d1.w),a0
-	;move.w	FD_LOGICAL(a0),d0
-	;lsl.w	#7,d0			; multiply * 128 (cp/m sector size)
-	bsr	fd_read_track
+	bsr	fd_read_track		; read track
 
-	move.w	cpm_sector,d0
+	move.w	cpm_sector,d0		; calculate src address in sector data
 	lsl.w	#7,d0			; multiply by 128 (cp/m sector size)
 	and.l	#$ffff,d0
-	; offset
-	;bsr	printlong
-	;bsr	printcr
-	;
 	lea	sector_data,a0
 	add.l	d0,a0
-	move.l	a0,d0
-	; sectordata + offset
-	;bsr	printlong
-	;bsr	printcr
-	;
-	move.l	cpm_dma,a1
-	; dma address
-	;move.l	a1,d0
-	;bsr	printlong
-	;bsr	printcr
-	;
-	move.w	#0,d1
-.copy:	;move.l	(a0)+,(a1)+
-	move.l	(a0)+,d0
-	;bsr	printlong
-	move.l  d0,(a1)+
+
+	move.l	cpm_dma,a1		; destination address
+	
+	move.w	#0,d1			; copy cp/m sector to "dma buffer"
+.copy:	
+	move.l	(a0)+,(a1)+
 	addq.w	#4,d1
 	cmp.w	#128,d1
 	bne	.copy
-	;bsr	printcr
-	clr.w	d0
+	clr.w	d0			; no error
 	rts
 
-fd_read_track:
-	cmp.w	#0,fd_cache_ok
-	beq	.readtrack
-	move.w	fd_drive,d0
-	cmp.w	cpm_drive,d0
-	bne	.readtrack
-	lea	fd_drive_table,a0
-	move.w	fd_drive,d1
-	lsl.w	#2,d1
-	move.l	(a0,d1.w),a0
-	move.w	FD_TRACK(a0),d0
-	cmp.w	cpm_track,d0
-	bne	.readtrack
-	bra	.cacheok
-	;move.w	cpm_drive,d0
-	;bsr	printword
-	;bsr	printcr
-	;move.w	cpm_track,d0
-	;bsr	printword
-	;bsr	printcr
-	;move.w	cpm_sector,d0
-	;bsr	printword
-	;bsr	printcr
-.readtrack
-	cmp.w	#0,fd_dirty
-	beq	.readtrack2
-	bsr	fd_flush
-.readtrack2:
-	;move.b	#".",d0
-	;bsr	printchar
-	;move.w	cpm_track,d0
-	;bsr	printbyte
-	;lea	readtrackstr,a0
-	;bsr	printstring
-	;move.w	cpm_track,d0
-	;bsr	printbyte
-	;move.b	#':',d0
-	;bsr	printbyte
-	move.w	#0,fd_cache_ok
-	move.w	cpm_drive,d0
-	bsr	fd_select
-	; TODO: add disk change check
-	move.w	cpm_track,d0
-	bsr	fd_seek
-	clr.w	d0			; read
-	bsr	fd_rw_track
-	bsr	fd_decode_track
-;	bsr	fd_encode_track
-;.debug:	jmp	.debug
-	;bsr	fd_disk_change
-	bsr	fd_deselect
-
-	move.w	#1,fd_cache_ok
-	;bra	.skip
-.cacheok:
-	rts	
 
 ; Function 14 Write sector
 ;
@@ -950,58 +752,33 @@ fd_read_track:
 ;	d0.w: 0 if no error, 1 if physical error
 ;
 writesector:
-	move.w	d1,fd_write
-	bsr	fd_read_track
-	;move.w	d1,d0
-	;add.w	#65,d0
-	;bsr	printchar
-	move.w	cpm_sector,d0
+	move.w	d1,fd_write		; save write type
+	bsr	fd_read_track		; read track (if needed)
+
+	move.w	cpm_sector,d0		; calculate destination address in sector data
 	lsl.w	#7,d0			; multiply by 128 (cp/m sector size)
 	and.l	#$ffff,d0
 	lea	sector_data,a0
 	add.l	d0,a0
-	move.l	cpm_dma,a1
-	move.w	#0,d1
+
+	move.l	cpm_dma,a1		; source address
+
+	move.w	#0,d1			; copy "dma buffer" to sector data
 .copy:
-	move.l	(a1)+,d0
-	move.l  d0,(a0)+
+	move.l	(a1)+,(a0)+
 	addq.w	#4,d1
 	cmp.w	#128,d1
 	bne	.copy
-	move.b	#1,fd_dirty
+
+	move.b	#1,fd_dirty		; mark track as dirty
 	move.w	cpm_track,fd_dirty_track
 	move.w	cpm_drive,fd_dirty_drive
-	cmp.w	#1,fd_write
+	cmp.w	#1,fd_write		; flush if directory sector
 	bne	.exit
 	bsr	fd_flush
 .exit:
-	clr.w	d0
+	clr.w	d0			; no error
 	rts
-
-fd_flush:
-	;move.w	fd_dirty_track,d0
-	;bsr	printbyte
-	move.w	fd_dirty_drive,d0
-	bsr	fd_select
-	;move.b	#"2",d0
-	;bsr	printchar
-	; TODO: add disk change check
-	move.w	fd_dirty_track,d0
-	bsr	fd_seek
-	;move.b	#"3",d0
-	;bsr	printchar
-	bsr	fd_encode_track
-	;move.b	#"4",d0
-	;bsr	printchar
-	move.w	#$4000,d0			; write
-	bsr	fd_rw_track
-	;move.b	#"5",d0
-	;bsr	printchar
-	;bsr	printcr
-	bsr	fd_deselect
-	move.w	#0,fd_dirty
-	rts
-
 
 ; Function 15 Return list status: Not needed at first phase
 
@@ -1061,6 +838,55 @@ setexception:
 ; disk routines
 ;
 
+
+fd_read_track:
+	cmp.w	#0,fd_cache_ok
+	beq	.readtrack
+	move.w	fd_drive,d0
+	cmp.w	cpm_drive,d0
+	bne	.readtrack
+	lea	fd_drive_table,a0
+	move.w	fd_drive,d1
+	lsl.w	#2,d1
+	move.l	(a0,d1.w),a0
+	move.w	FD_TRACK(a0),d0
+	cmp.w	cpm_track,d0
+	bne	.readtrack
+	bra	.cacheok
+.readtrack
+	cmp.w	#0,fd_dirty
+	beq	.readtrack2
+	bsr	fd_flush
+.readtrack2:
+	move.w	#0,fd_cache_ok
+	move.w	cpm_drive,d0
+	bsr	fd_select
+	; TODO: add disk change check
+	move.w	cpm_track,d0
+	bsr	fd_seek
+	clr.w	d0			; read
+	bsr	fd_rw_track
+	bsr	fd_decode_track
+	bsr	fd_deselect
+
+	move.w	#1,fd_cache_ok
+.cacheok:
+	rts	
+
+fd_flush:
+	move.w	fd_dirty_drive,d0
+	bsr	fd_select
+	; TODO: add disk change check
+	move.w	fd_dirty_track,d0
+	bsr	fd_seek
+	bsr	fd_encode_track
+	move.w	#$4000,d0			; write
+	bsr	fd_rw_track
+	bsr	fd_deselect
+	move.w	#0,fd_dirty
+	rts
+
+
 ;
 ; Select floppy drive
 ;
@@ -1075,7 +901,6 @@ fd_select:
 	clr.w	fd_cache_ok
 .fd_select1:
 	move.w	d0,fd_drive
-	;move.w	fd_drive,d0
 	and.b	#$7f,CIAB+PRB	; motor on
 	move.b	#$f7,d1		; select drive
 	rol.b	d0,d1
@@ -1158,15 +983,11 @@ fd_step_direction:
 	and.b	#$01,d0
 	beq	.exit		; branch if new dir = forward
 	or.b	#$02,CIAB+PRB	; set direction backward
-	;lea	stepbackward,a0
-	;bsr	printstring
 	bra	.delay18ms
 .checkdir2:			; prev dir = backward
 	and.b	#$01,d0
 	bne	.exit		; branch if new dir = backward
 	and.b	#$fd,CIAB+PRB	; set direction forward
-	;lea	stepforward,a0
-	;bsr	printstring
 .delay18ms:
 	move.w	#18,d0
 	bsr	delay
@@ -1185,12 +1006,6 @@ fd_step:
 .delay3ms:
 	move.w	#3,d0
 	bsr	delay
-	; update track number
-	;lea	fd_drive_table,a0	; get old track number
-	;move.w	fd_drive,d1
-	;lsl.w	#2,d1
-	;move.l	(a0,d1.w),a0
-	;move.w	FD_TRACK(a0),d0
 	rts
 
 ;
@@ -1247,8 +1062,6 @@ fd_get_current_track:
 	lsl.w	#2,d1
 	move.l	(a0,d1.w),a0
 	move.w	FD_TRACK(a0),d0
-	;bsr	printword
-	;bsr	printcr
 	rts
 
 ; Seek track
@@ -1272,13 +1085,6 @@ fd_seek:
 	bsr	fd_step_direction
 .loop:
 	bsr	fd_get_current_track	; exit if current track = track
-	; debug
-	;bsr	printword
-	;bsr	printcr
-	;move.w	#1000,d0
-	;bsr	delay
-	bsr	fd_get_current_track	; exit if current track = track
-	; debug end
 	cmp.w	d0,d2
 	beq	.exit
 	bsr	fd_step
@@ -1471,13 +1277,6 @@ fd_decode_track:
 	; get sector info
 	clr.l	d1				; checksum = 0
 	move.w	#4,d2				; decode sector info
-	; debug
-	;move.l	a0,d0
-	;bsr	printlong
-	;lea	mfm_track+2,a0
-	;move.l	a0,d0
-	;bsr	printlong
-	;
 	bsr	fd_decode_long
 	move.l	d0,d4				; save sector info
 	addq.l	#4,a0				; current position = current position + 4
@@ -1505,12 +1304,6 @@ fd_decode_track:
 	move.l	d1,d7				; save checksum
 	move.w	#4,d2				; offset to even long
 	bsr	fd_decode_long
-	; debug
-	;move.l	d7,d0
-	;bsr	printlong
-	;bsr	printcr
-	;rts
-	;
 	cmp.l	d0,d7				; compare checksum
 	bne	.badsectorheaderchecksum
 	addq.l	#4,a0				; current position = current position + 4
@@ -1572,25 +1365,6 @@ fd_decode_track:
 .exit:
 	movem.l (sp)+,d0-d7/a0-a3
 	rts
-
-; disk write logic:
-;
-; cached:
-;   - no: read track
-;   - yes: is track same?
-;              - yes: continue
-;              - no: read track
-; write sector to sector data
-; set dirty bit
-;
-;
-; flush logic:
-;
-; is dirty bit set:
-;    - no: return
-;    - yes: encode track
-;           write track
-;
 
 ; Encode track
 ;
@@ -1757,7 +1531,6 @@ fd_encode_track:
 .clockbit4:	
 	
 	movem.l (sp)+,d0-d7/a0-a1
-;.debug	jmp	.debug
 	rts
 
 ;
@@ -2015,21 +1788,6 @@ bad_sector_checksum_str:
 	dc.b	13,10,"BIOS Error: Bad sector checksum",13,10,0
 not_implemented_str:
 	dc.b	13,10,"BIOS Error: Not implemented",13,10,0
-dmaended:
-	dc.b	13,10,"DMA ended",13,10,0
-	even
-stepforward:
-	dc.b	"Step forward",13,10,0
-stepbackward:
-	dc.b	"Step backward",13,10,0
-seektrack0:
-	dc.b	"Seek track 0", 13, 10, 0
-seektrack8:
-	dc.b	"Seek track 8", 13, 10, 0
-fetchtrackinfo:
-	dc.b	"Fetch track info", 13, 10, 0
-readtrackstr:
-	dc.b	13,10,"Reading track ",0
 	even
 
 ; keymap (raw code to ascii)
