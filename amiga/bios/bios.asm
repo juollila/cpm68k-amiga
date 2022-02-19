@@ -547,12 +547,18 @@ keyboard_int:
 	bcc	.specialkey
 	lea	keymap_us,a0
 	lsl.b	#1,d0
+	cmp.w	#0,ctrl_key
+	bne	.storectrl		; branch if control key
 	move.w	left_shift.l,d1
 	or.w	right_shift.l,d1
 	or.w	caps_lock.l,d1
 	cmp.w	#0,d1
 	beq	.noshift
 	move.b	1(a0,d0),d1
+	bra	.storekey
+.storectrl:
+	move.b	0(a0,d0),d1
+	and.b	#$1f,d1			; clear 3 top most bits
 	bra	.storekey
 .noshift:
 	move.b  0(a0,d0),d1
