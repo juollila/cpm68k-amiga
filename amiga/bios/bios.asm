@@ -675,7 +675,9 @@ setdrive:
 	move.w	d1,cpm_drive
 	and.w	#$ffff,d2
 	move.w	d2,cpm_logged
-	move.l	#floppy_dph,d0
+	lsl.w	#2,d1			; multiply by 4 (offset in table)
+	lea	floppy_dph_table,a0
+	move.l	(a0,d1.w),d0
 .exit
 	rts
 
@@ -1777,17 +1779,32 @@ df3:
 	dc.w	0	; side
 	dc.w	0	; sector
 
+; pointers to disk parameter headers
+floppy_dph_table:
+	dc.l	floppy_dph1
+	dc.l	floppy_dph2
 
-; floppy disk parameter header
-floppy_dph:
+; floppy disk parameter header for drive A
+floppy_dph1:
 	dc.l	0			; xlt, no sector translation table
 	dc.w	0			; scratch pad
 	dc.w	0			; scratch pad
 	dc.w	0			; scratch pad
 	dc.l	floppy_dir_buffer	; address of directory buffer
 	dc.l	floppy_dpb		; address of disk parameter block
-	dc.l	floppy_csv		; address of checksum vector
-	dc.l	floppy_alv		; address of scratchpad area
+	dc.l	floppy_csv1		; address of checksum vector
+	dc.l	floppy_alv1		; address of scratchpad area
+
+; floppy disk parameter header for drive B
+floppy_dph2:
+	dc.l	0			; xlt, no sector translation table
+	dc.w	0			; scratch pad
+	dc.w	0			; scratch pad
+	dc.w	0			; scratch pad
+	dc.l	floppy_dir_buffer	; address of directory buffer
+	dc.l	floppy_dpb		; address of disk parameter block
+	dc.l	floppy_csv2		; address of checksum vector
+	dc.l	floppy_alv2		; address of scratchpad area
 	
 ; floppy disk parameter block
 floppy_dpb:
@@ -1805,15 +1822,20 @@ floppy_dpb:
 floppy_dir_buffer
 	blk.b	128,0
 ; floppy checksum vector
-floppy_csv:
+floppy_csv1:
+	blk.b	DIRENTRIES/4,0
+floppy_csv2:
 	blk.b	DIRENTRIES/4,0
 ; floppy scratchpad area
-floppy_alv:
+floppy_alv1:
 	blk.b	TRACKS*TRACKSIZE/BLOCKSIZE/8
-
+	even
+floppy_alv2:
+	blk.b	TRACKS*TRACKSIZE/BLOCKSIZE/8
+	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.37 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.39 ***",13,10
         dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
