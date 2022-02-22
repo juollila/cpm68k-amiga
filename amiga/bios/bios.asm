@@ -146,6 +146,7 @@ _init:
 	bsr	printstring
 	bsr	printcr
 	move.w	#0,d0				; select drive A: (0)
+	move.w	d0,fd_drive
 	bsr	fd_select
 	bsr	fd_sync				; synchronize drive
 	bsr	fd_deselect			; deselect drive
@@ -836,11 +837,16 @@ getaddresstable:
 ;	Entry parameters: d0.w: $15
 ;	Return value: d0.w: 0 if no error, $ffff if physical error
 flush:
+	move.w	fd_dirty,d0		; check if disk changed
+	bsr	fd_select
+	bsr	fd_disk_change
+	beq	.error			; cannot flush if disk changed
 	bsr	fd_flush
 	bne	.error
 	clr.w	d0
 	rts
 .error:
+	bsr	fd_deselect
 	move.w	#-1,d0
 	rts
 
@@ -869,17 +875,32 @@ setexception:
 ; Input parameters: None
 ; Returns: Zero flag set if successful
 ;
+
 fd_read_track:
-	cmp.w	#0,fd_cache_ok
+	move.w	cpm_drive,d0		; check if disk changed
+	bsr	fd_select
+	bsr	fd_disk_change
+	bne	.notchanged
+	move.w	fd_dirty_drive,d0	; check if dirty drive same as drive with disk change
+	cmp.w	cpm_drive,d0
+	beq	.noflush		; we cannot flush if same drive
+	bsr	fd_flush
+	bne	.error			; branch if error
+.noflush:
+	bsr	fd_sync			; synchronization, fd_cache_ok = 0, fd_dirty = 0
+	bne	.error
+.notchanged:
+	cmp.w	#0,fd_cache_ok		; read track if cache is not ok
 	beq	.readtrack
-	move.w	fd_drive,d0
+	move.w	fd_drive,d0		; read track if drive is different
 	cmp.w	cpm_drive,d0
 	bne	.readtrack
-	lea	fd_drive_table,a0
-	move.w	fd_drive,d1
-	lsl.w	#2,d1
-	move.l	(a0,d1.w),a0
-	move.w	FD_TRACK(a0),d0
+	;lea	fd_drive_table,a0	; read track if track is different
+	;move.w	fd_drive,d1
+	;lsl.w	#2,d1
+	;move.l	(a0,d1.w),a0
+	;move.w	FD_TRACK(a0),d0
+	bsr	fd_get_current_track	; read track if track is different
 	cmp.w	cpm_track,d0
 	bne	.readtrack
 	bra	.cacheok
@@ -887,21 +908,21 @@ fd_read_track:
 	bsr	fd_flush
 	bne	.error			; branch if error
 .readtrack2:
-	move.w	#0,fd_cache_ok
+	move.w	#0,fd_cache_ok		; invalidate cache
 	move.w	cpm_drive,d0
+	move.w	d0,fd_drive
 	bsr	fd_select
-	; TODO: add disk change check
 	move.w	cpm_track,d0
-	bsr	fd_seek
+	bsr	fd_seek			; seek track
 	clr.w	d0			; read
 	bsr	fd_rw_track
 	bne	.error			; branch if error
 	bsr	fd_decode_track
 	bne	.error			; branch if not successful
-	bsr	fd_deselect
 
-	move.w	#1,fd_cache_ok
+	move.w	#1,fd_cache_ok		; cache is ok
 .cacheok:
+	bsr	fd_deselect
 	clr.w	d0
 	rts
 .error:
@@ -916,7 +937,6 @@ fd_flush:
 	beq	.exit
 	move.w	fd_dirty_drive,d0
 	bsr	fd_select
-	; TODO: add disk change check
 	move.w	fd_dirty_track,d0
 	bsr	fd_seek
 	bsr	fd_encode_track
@@ -941,12 +961,12 @@ fd_flush:
 ; Return value: None
 ;
 fd_select:
-	move.w	fd_drive,d1
-	cmp.w	d0,d1
-	beq	.fd_select1
-	clr.w	fd_cache_ok
+	;move.w	fd_drive,d1
+	;cmp.w	d0,d1
+	;beq	.fd_select1
+	;clr.w	fd_cache_ok
 .fd_select1:
-	move.w	d0,fd_drive
+	;move.w	d0,fd_drive
 	and.b	#$7f,CIAB+PRB	; motor on
 	move.b	#$f7,d1		; select drive
 	rol.b	d0,d1
@@ -1062,6 +1082,7 @@ fd_step:
 
 fd_sync:
 	clr.w	fd_cache_ok		; set cache is not OK
+	clr.w	fd_dirty		; no track yet written
 	bsr	fd_track_zero
 	bne	.skip
 	move.w	#0,d0			; go forward one step if in track zero
@@ -1079,6 +1100,8 @@ fd_sync:
 	cmp.w	#CYLINDERS+15,d2
 	bne	.loop
 .fail:	move.l	(sp)+,d2
+	lea	no_track_zero_str(pc),a0
+	bsr	printstring
 	or.w	#1,d0			; clear zero flag i.e. error
 	rts
 .exit:
@@ -1849,6 +1872,8 @@ bad_sector_header_checksum_str:
 	dc.b	13,10,"BIOS Error: Bad sector header checksum",13,10,0
 bad_sector_checksum_str:
 	dc.b	13,10,"BIOS Error: Bad sector checksum",13,10,0
+no_track_zero_str:
+	dc.b	13,10,"BIOS Error: Cannot find track zero",13,10,0
 not_implemented_str:
 	dc.b	13,10,"BIOS Error: Not implemented",13,10,0
 	even
@@ -1880,3 +1905,4 @@ mfm_track = (sector_data+TRACKSIZE)
 	; 13630 bytes
 screen = (mfm_track+MFM_TRACKSIZE)
 	; 20 kB
+end_address = (screen+(640*256/8))
