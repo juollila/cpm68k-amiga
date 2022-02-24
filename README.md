@@ -8,8 +8,8 @@ uncommon operating system when compared to 8-bit CP/M-80 variant. Software avail
 limited for the CP/M-68K, but the operating system includes for example an assembler and
 a C language compiler.
 
-SturmBIOS is an implementation of CP/M-68K BIOS for Commodore Amiga. It allows the usage
-of CP/M-68K on Amiga 500, 1000 and 2000 computers.
+SturmBIOS (also known as cpm68k-amiga) is an implementation of CP/M-68K BIOS for Commodore Amiga.
+It allows the usage of CP/M-68K on Amiga 500, 600, 1000 and 2000 computers.
 
 # Documentation
 

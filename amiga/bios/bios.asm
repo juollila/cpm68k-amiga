@@ -935,6 +935,8 @@ fd_read_track:
 fd_flush:
 	cmp.w	#0,fd_dirty
 	beq	.exit
+	bsr	fd_write_protection		; check write protection
+	beq	.writeprotected
 	move.w	fd_dirty_drive,d0
 	bsr	fd_select
 	move.w	fd_dirty_track,d0
@@ -947,10 +949,14 @@ fd_flush:
 	move.w	#0,fd_dirty
 .exit:
 	rts
+.writeprotected:
+	lea	write_protected_str,a0
+	bsr	printstring
 .error:
 	bsr	fd_deselect
 	move.b	#1,d0
 	rts
+
 
 
 ;
@@ -1031,6 +1037,16 @@ fd_track_zero:
 fd_disk_change:
 	move.b	CIAA+PRA,d0
 	and.b	#$04,d0
+	rts
+
+;
+; Check if disk write protected
+;
+; Entry parameters: None
+; Return value: zero flag set if disk write protected
+fd_write_protection:
+	move.b	CIAA+PRA,d0
+	and.b	#$08,d0
 	rts
 
 ;
@@ -1858,7 +1874,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.39 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.41 ***",13,10
         dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
@@ -1874,6 +1890,8 @@ bad_sector_checksum_str:
 	dc.b	13,10,"BIOS Error: Bad sector checksum",13,10,0
 no_track_zero_str:
 	dc.b	13,10,"BIOS Error: Cannot find track zero",13,10,0
+write_protected_str:
+	dc.b	13,10,"BIOS Error: Disk write protected",13,10,0
 not_implemented_str:
 	dc.b	13,10,"BIOS Error: Not implemented",13,10,0
 	even
