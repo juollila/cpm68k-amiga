@@ -1031,15 +1031,20 @@ getaddresstable:
 ;	Entry parameters: d0.w: $15
 ;	Return value: d0.w: 0 if no error, $ffff if physical error
 flush:
-	move.w	fd_dirty,d0		; check if disk changed
+	cmp.w	#0,fd_dirty		; check if flush is needed
+	beq	.exit
+	move.w	fd_dirty_drive,d0	; check if disk changed
 	bsr	fd_select
 	bsr	fd_disk_change
 	beq	.error			; cannot flush if disk changed
 	bsr	fd_flush
 	bne	.error
+.exit:
 	clr.w	d0
 	rts
 .error:
+	lea	no_flush_str,a0
+	bsr	printstring
 	bsr	fd_deselect
 	move.w	#-1,d0
 	rts
@@ -1081,6 +1086,8 @@ fd_read_track:
 	bsr	fd_flush
 	bne	.error			; branch if error
 .noflush:
+	lea	no_flush_str,a0
+	bsr	printstring
 	bsr	fd_sync			; synchronization, fd_cache_ok = 0, fd_dirty = 0
 	bne	.error
 .notchanged:
@@ -1132,6 +1139,7 @@ fd_flush:
 	bsr	fd_write_protection		; check write protection
 	beq	.writeprotected
 	move.w	fd_dirty_drive,d0
+	move.w	d0,fd_drive
 	bsr	fd_select
 	move.w	fd_dirty_track,d0
 	bsr	fd_seek
@@ -1141,6 +1149,7 @@ fd_flush:
 	bne	.error
 	bsr	fd_deselect
 	move.w	#0,fd_dirty
+	;move.w	#1,fd_cache_ok
 .exit:
 	rts
 .writeprotected:
@@ -2068,7 +2077,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.42 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.43 ***",13,10
         dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
@@ -2086,6 +2095,8 @@ no_track_zero_str:
 	dc.b	13,10,"BIOS Error: Cannot find track zero",13,10,0
 write_protected_str:
 	dc.b	13,10,"BIOS Error: Disk write protected",13,10,0
+no_flush_str:
+	dc.b	13,10,"BIOS Error: Cannot flush",13,10,0
 not_implemented_str:
 	dc.b	13,10,"BIOS Error: Not implemented",13,10,0
 	even
