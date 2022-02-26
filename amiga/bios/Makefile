@@ -86,9 +86,9 @@ adf: boot-with-checksum.bin
 	# cpmcp -f amiga ../adf/cpm-boot.adf ../../cpm/disks/DISK6/XFER86.C 0:
 	# cpmcp -f amiga ../adf/cpm-boot.adf ../../cpm/disks/DISK6/XFER86.REL 0:
 	#
-	#cp ../adf/cpm-blank.adf ../adf/cpm-me.adf
-	#mkfs.cpm -f amiga -b boot-with-checksum.bin ../adf/cpm-me.adf
-	#cpmcp -f amiga ../adf/cpm-me.adf ../../applications/me68k/*.* 0:
+	cp ../adf/cpm-blank.adf ../adf/cpm-me.adf
+	mkfs.cpm -f amiga -b boot-with-checksum.bin ../adf/cpm-me.adf
+	cpmcp -f amiga ../adf/cpm-me.adf ../../applications/me68k/*.* 0:
 
 clean:
 	rm -f *.bin

@@ -11,6 +11,10 @@ a C language compiler.
 SturmBIOS (also known as cpm68k-amiga) is an implementation of CP/M-68K BIOS for Commodore Amiga.
 It allows the usage of CP/M-68K on Amiga 500, 600, 1000 and 2000 computers.
 
+Note: This project is still in "work in progress" state. There are bugs and a new version can be
+buggier than a little bit older version. Testing is done mainly with UAE so that development is
+quicker. But real HW is planned to be supported.
+
 # Documentation
 
 CP/M-68k documentation can be found from https://github.com/juollila/cpm68k-amiga/tree/main/cpm/doc

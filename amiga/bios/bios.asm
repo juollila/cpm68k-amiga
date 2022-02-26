@@ -117,7 +117,6 @@ ICR	= $d00	; Interrupt control register
 CRA	= $e00	; Control register A
 CRB	= $f00	; Control register B
 
-;	code_c
 	org	BIOSSTART
 
 ;
@@ -440,12 +439,6 @@ conout:
 .escy		dc.w	0
 
 .conout1:
-	;cmp.b	#$1b,d1		; check if esc
-	;beq	.escape
-	;cmp.b	#$20,d1
-	;bcs	.controlch
-	;cmp.b	#$7f,d1
-	;bcc	.controlch
 	; calculate character address in font
 	sub.b	#$20,d1		; space is first character in font
 	move.l	d1,d0
@@ -564,23 +557,6 @@ conout:
 	;dc.l	.eraeol		; erase to end of line
 	;dc.l	.eraeos		; erase to end of screen
 
-;.controlch:
-;	cmp.b	#$0d,d1		; cr
-;	beq	.boline
-;	cmp.b	#$0a,d1		; line feed / ctrl+j
-;	beq	.cursordown
-;	cmp.b	#$0b,d1		; vertical tab / ctrl+k
-;	beq	.cursorup
-;	cmp.b	#8,d1		; backspace / ctrl+h
-;	beq	.cursorleft
-;	cmp.b	#$c,d1		; form feed / ctrl+l
-;	beq	.cursorright 
-;	cmp.b	#9,d1		; tab
-;	beq	.tab
-;	cmp.b	#$1a,d1		; home / clear screen
-;	beq	.cls
-;	rts
-
 	; go to beginning of line
 .boline:
 	move.w	#0,.column
@@ -673,7 +649,6 @@ conout:
 .scrolldown:
 	bsr	waitblit
 	lea	CUSTOM,a0
-	;move.w	#31,.row
 	move.l	#screen,d0
 	add.l	#8*80,d0
 	move.l	d0,BLTDPTH(a0)	; destination address (bltdpth)
@@ -703,7 +678,6 @@ conout:
 .scrollup:
 	bsr	waitblit
 	lea	CUSTOM,a0
-	;move.w	#31,.row
 	move.l	#screen,d0
 	move.l	d0,BLTDPTH(a0)	; destination address (bltdpth)
 	add.l	#8*80,d0
@@ -1031,21 +1005,13 @@ getaddresstable:
 ;	Entry parameters: d0.w: $15
 ;	Return value: d0.w: 0 if no error, $ffff if physical error
 flush:
-	cmp.w	#0,fd_dirty		; check if flush is needed
-	beq	.exit
-	move.w	fd_dirty_drive,d0	; check if disk changed
-	bsr	fd_select
-	bsr	fd_disk_change
-	beq	.error			; cannot flush if disk changed
 	bsr	fd_flush
 	bne	.error
-.exit:
 	clr.w	d0
 	rts
 .error:
 	lea	no_flush_str,a0
 	bsr	printstring
-	bsr	fd_deselect
 	move.w	#-1,d0
 	rts
 
@@ -1080,32 +1046,25 @@ fd_read_track:
 	bsr	fd_select
 	bsr	fd_disk_change
 	bne	.notchanged
-	move.w	fd_dirty_drive,d0	; check if dirty drive same as drive with disk change
-	cmp.w	cpm_drive,d0
-	beq	.noflush		; we cannot flush if same drive
-	bsr	fd_flush
-	bne	.error			; branch if error
-.noflush:
-	lea	no_flush_str,a0
-	bsr	printstring
+
+	move.w	d0,fd_drive
 	bsr	fd_sync			; synchronization, fd_cache_ok = 0, fd_dirty = 0
 	bne	.error
+	bsr	fd_deselect
+	bra	.readtrack2
+
 .notchanged:
 	cmp.w	#0,fd_cache_ok		; read track if cache is not ok
 	beq	.readtrack
 	move.w	fd_drive,d0		; read track if drive is different
 	cmp.w	cpm_drive,d0
 	bne	.readtrack
-	;lea	fd_drive_table,a0	; read track if track is different
-	;move.w	fd_drive,d1
-	;lsl.w	#2,d1
-	;move.l	(a0,d1.w),a0
-	;move.w	FD_TRACK(a0),d0
 	bsr	fd_get_current_track	; read track if track is different
 	cmp.w	cpm_track,d0
 	bne	.readtrack
 	bra	.cacheok
-.readtrack
+.readtrack:
+	bsr	fd_deselect
 	bsr	fd_flush
 	bne	.error			; branch if error
 .readtrack2:
@@ -1141,6 +1100,8 @@ fd_flush:
 	move.w	fd_dirty_drive,d0
 	move.w	d0,fd_drive
 	bsr	fd_select
+	bsr	fd_disk_change			; check if disk changed
+	beq	.error
 	move.w	fd_dirty_track,d0
 	bsr	fd_seek
 	bsr	fd_encode_track
@@ -1149,7 +1110,6 @@ fd_flush:
 	bne	.error
 	bsr	fd_deselect
 	move.w	#0,fd_dirty
-	;move.w	#1,fd_cache_ok
 .exit:
 	rts
 .writeprotected:
@@ -1170,12 +1130,6 @@ fd_flush:
 ; Return value: None
 ;
 fd_select:
-	;move.w	fd_drive,d1
-	;cmp.w	d0,d1
-	;beq	.fd_select1
-	;clr.w	fd_cache_ok
-.fd_select1:
-	;move.w	d0,fd_drive
 	and.b	#$7f,CIAB+PRB	; motor on
 	move.b	#$f7,d1		; select drive
 	rol.b	d0,d1
@@ -1486,8 +1440,6 @@ fd_decode_long:
 	or.l	d4,d0			; result = (odd long << 1) | even long
 	eor.l	d3,d4			; checksum = chekcsum xor decoded odd long xor decoded even long
 	eor.l	d4,d1
-	;bsr	printlong
-	;bsr	printcr
 	addq.l	#4,a0
 	movem.l	(sp)+,d3-d4
 	rts
@@ -1544,10 +1496,6 @@ fd_decode_track:
 	; d7.l = tmp
 
 	 movem.l d0-d7/a0-a3,-(sp)
-	;bsr	fd_get_current_track		; get current track number
-	;move.w	d0,d6
-	;move.w	FD_SIDE(a0),d0
-	;add.w	d0,d6
 	lea	mfm_track,a0			; set mfm buffer address
 	clr.w	d3				; number of sectors decoded = 0
 
@@ -1572,12 +1520,18 @@ fd_decode_track:
 	bsr	fd_decode_long
 	move.l	d0,d4				; save sector info
 	addq.l	#4,a0				; current position = current position + 4
-	;and.l	#$ff000000,d0			; check high byte of sector info, $ff = Amiga v1.0 format
-	;cmp.l	#$ff000000,d0
-	;bne	.badsectorheader
+	and.l	#$ff000000,d0			; check high byte of sector info, $ff = Amiga v1.0 format
+	cmp.l	#$ff000000,d0
+	bne	.badsectorheader
+	move.l	d4,d5				; check track number (should be same as cpmtrack)
+	move.b	#16,d7
+	lsr.l	d7,d5
+	and.w	#$ff,d5
+	cmp.w	cpm_track,d5
+	bne	.badsectorheader
 	move.l	d4,d5				; check sector number (should be 0-10)
-	and.l	#$ff00,d5
 	lsr.w	#8,d5
+	and.w	#$ff,d5
 	cmp.w	#11,d5
 	bcc	.badsectorheader
 	cmp.w	#0,d5
@@ -2077,7 +2031,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.43 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.44 ***",13,10
         dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
