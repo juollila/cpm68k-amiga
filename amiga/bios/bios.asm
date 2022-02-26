@@ -21,6 +21,10 @@
 ; SOFTWARE.
 ;
 
+; SturmBIOS floppy drive routines were inspired by AROS and EmuTOS floppy drive implementations:
+; EmuTOS - Amiga specific funtions: https://github.com/emutos/emutos/blob/master/bios/amiga.c
+; AROS - Amiga HW floppy stuff: https://github.com/aros-development-team/AROS/blob/master/arch/m68k-amiga/devs/trackdisk/trackdisk_hw.c
+
 CUSTOM		= $dff000	; Start of custom chips
 CPMSTART	= $60000	; Start of CP/M
 CCPSTART	= $600bc	; Start of CCP
@@ -323,14 +327,125 @@ conin:	bsr	constatus
 conout:
 	and.l	#$000000ff,d1	; use only low byte
 	cmp.w	#0,.escseq	; check if esc sequence is ongoing
-	bne	.checksequence
+	bne	.checkescapesequence
+	cmp.b	#$20,d1		; check if ctrl character
+	bcc	.conout1	; branch if not ctrl character
+
+	; handle control code
+	move.l	d2,-(sp)
+	lea	.ctrltable,a0
+	clr.l	d0
+.ctrlloop:			; find ctrl character
+	move.b	(a0,d0.w),d2
+	beq	.ctrlexit
+	cmp.b	d1,d2
+	beq	.ctrlexecute
+	addq	#1,d0
+	bra	.ctrlloop
+.ctrlexecute:			; execute ctrl command
+	lsl	#2,d0
+	lea	.ctrladdresstable,a0
+	move.l	(a0,d0.w),a0
+	jsr	(a0)
+.ctrlexit:
+	move.l (sp)+,d2
+	rts
+
+	; handle escape sequence
+.escape:
+	move.w	#1,.escseq
+	rts
+.checkescapesequence:
+	cmp.w	#1,.escseq	; check if command is expected
+	beq	.checkesccommand
+	cmp.w	#2,.escseq	; check if x coord is expected
+	beq	.getx1
+	cmp.w	#3,.escseq	; check if y coord is expected
+	beq	.gety1
+	cmp.w	#8,.escseq	; check if y coord is expected
+	beq	.gety2
+	cmp.w	#9,.escseq	; check if x coord is expected
+	beq	.getx2
+
+	; handle escape code i.e. command
+.checkesccommand:
+	move.l	d2,-(sp)
+	lea	.esctable,a0
+	clr.l	d0
+.escloop:			; find esc command character
+	move.b	(a0,d0.w),d2
+	beq	.escexit
+	cmp.b	d1,d2
+	beq	.escexecute
+	addq	#1,d0
+	bra	.escloop
+.escexecute:			; execute escape command
+	lsl	#2,d0
+	lea	.escaddresstable,a0
+	move.l	(a0,d0.w),a0
+	jsr	(a0)
+.escexit:
+	move.l (sp)+,d2	
+	rts
+
+.getx1:
+	sub.w	#$20,d1
+	move.w	d1,.escx
+	move.w	#3,.escseq
+	rts
+.gety1:
+	sub.w	#$20,d1
+	move.w	d1,.escy
+	bra	.movecursor
+
+.gety2: sub.w	#$20,d1
+	move.w	d1,.escy
+	move.w	#9,.escseq
+	rts
+
+.getx2:	sub.w	#$20,d1
+	move.w	d1,.escx	; fall to move cursor
+
+.movecursor:
+	move.w	.escx,d0	; store x if valid
+	bmi	.notseq
+	cmp.w	#COLS,d0
+	bcc	.notseq
+	move.w	d0,.column
+	move.w	.escy,d0	; store y if valid
+	bmi	.notseq
+	cmp.w	#ROWS,d0
+	bcc	.notseq
+	move.w	d0,.row
+.notseq:
+	clr.w	d0
+	move.w	d0,.escseq
+	move.w	d0,.escx
+	move.w	d0,.escy
+	rts
+
+.loadcursor:
+	move.w	#2,.escseq
+	rts
+
+.loadcursorvt52:
+	move.w	#8,.escseq
+	rts
+
+.row:		dc.w	0
+.column:	dc.w	0
+.escseq		dc.w	0	; 1: ESC received, 2: ESC= received, 3: ESC=x received
+				; 8: ESCY received, 9: ESCYy received 
+.escx		dc.w	0
+.escy		dc.w	0
+
 .conout1:
-	cmp.b	#$1b,d1		; check if esc
-	beq	.escape
-	cmp.b	#$20,d1
-	bcs	.controlch
-	cmp.b	#$7f,d1
-	bcc	.controlch
+	;cmp.b	#$1b,d1		; check if esc
+	;beq	.escape
+	;cmp.b	#$20,d1
+	;bcs	.controlch
+	;cmp.b	#$7f,d1
+	;bcc	.controlch
 	; calculate character address in font
 	sub.b	#$20,d1		; space is first character in font
 	move.l	d1,d0
@@ -367,9 +482,9 @@ conout:
 	move.w	d0,.column
 	rts
 
-; handle control characters
+; control characters
 
-;	ADM-3A screen codes
+;	ADM-3A control codes
 ;
 ;	ESC = row col		cursor position
 ;	^H			cursor left
@@ -378,38 +493,124 @@ conout:
 ;	^K			cursor up
 ;	^Z			home and clear screen
 ;	^M			carrage return
-;	^G			bell
+;	TODO: ^G		bell
+;
+;
+;	VT-52 control codes
+;
+;	TODO: line feed
+;	TODO: cursor down
+;	TODO: referse line feed
+;	TODO: cursor up
+;	TODO: cursor right
+;	TODO: backspace, or cursor left
+;	TODO: carriage return
+;	TODO: cursor home
+;	TODO: tab
+;	TODO: direct cursor addressing ESC Y
+;	TODO: erase to end of line
+;	TODO: erase to end of screen
+;	TODO: bell
 
-.controlch:
-	cmp.b	#$0d,d1		; cr
-	beq	.boline
-	cmp.b	#$0a,d1		; line feed / ctrl+j
-	beq	.cursordown
-	cmp.b	#$0b,d1		; vertical tab / ctrl+k
-	beq	.cursorup
-	cmp.b	#8,d1		; backspace / ctrl+h
-	beq	.cursorleft
-	cmp.b	#$c,d1		; form feed / ctrl+l
-	beq	.cursorright 
-	cmp.b	#9,d1		; tab
-	beq	.tab
-	cmp.b	#$1a,d1		; home / clear screen
-	beq	.cls
-	; TODO rest of control characters
-	rts
+.ctrltable:
+	;dc.b	7		; bell / ctrl + g
+	dc.b	8		; cursor left / backspace / ctrl+h
+	dc.b	9		; tab / ctrl+i
+	dc.b	$a		; cursor down / line feed / ctrl+j
+	dc.b	$b		; cursor up / vertical tab / ctrl+k
+	dc.b	$c		; cursor right / form feed / ctrl+l
+	dc.b	$d		; cr / ctrl+m
+	dc.b	$1a		; clear screen / ctrl+z
+	dc.b	$1b		; esc / ctrl+[
+	dc.b	$1e		; home / ctrl+^ ???
+	dc.b	0		; end of table
+	even
+
+.ctrladdresstable:
+	;dc.l	.bell
+	dc.l	.cursorleft
+	dc.l	.tab
+	dc.l	.linefeed	; cursor down + scroll
+	dc.l	.cursorup
+	dc.l	.cursorright
+	dc.l	.boline
+	dc.l	.cls
+	dc.l	.escape
+	dc.l	.home
+
+.esctable:
+	dc.b	$3d		; ADM-3A: load cursor / ESC = 
+	dc.b	$42		; cursor down / ESC B
+	dc.b	$49		; reverse line feed / ESC I
+	dc.b	$41		; cursor up / ESC A
+	dc.b	$43		; cursor right / ESC C
+	dc.b	$44		; cursor left / backspace / ESC D
+	dc.b	$48		; cursor home / ESC H
+	dc.b	$59		; direct cursor addressing / ESC Y
+	dc.b	$4b		; erase to end of line / ESC K
+	dc.b	$4a		; erase to end of screen / ESC J
+	dc.b	0		; end of table
+	even
+
+.escaddresstable:
+	dc.l	.loadcursor
+	dc.l	.cursordown
+	dc.l	.reverselinefeed
+	dc.l	.cursorup
+	dc.l	.cursorright
+	dc.l	.cursorleft
+	dc.l	.home
+	dc.l	.loadcursorvt52
+	;dc.l	.eraeol		; erase to end of line
+	;dc.l	.eraeos		; erase to end of screen
+
+;.controlch:
+;	cmp.b	#$0d,d1		; cr
+;	beq	.boline
+;	cmp.b	#$0a,d1		; line feed / ctrl+j
+;	beq	.cursordown
+;	cmp.b	#$0b,d1		; vertical tab / ctrl+k
+;	beq	.cursorup
+;	cmp.b	#8,d1		; backspace / ctrl+h
+;	beq	.cursorleft
+;	cmp.b	#$c,d1		; form feed / ctrl+l
+;	beq	.cursorright 
+;	cmp.b	#9,d1		; tab
+;	beq	.tab
+;	cmp.b	#$1a,d1		; home / clear screen
+;	beq	.cls
+;	rts
 
 	; go to beginning of line
 .boline:
 	move.w	#0,.column
 	rts
 
-	; new line
+	; line feed = cursor down + scroll
+.linefeed:
+	move.w	.row,d0
+	addq.w	#1,d0
+	cmp.b	#32,d0
+	beq	.scrollup
+	move.w	d0,.row
+	rts
+
 .cursordown:
 	move.w	.row,d0
 	addq.w	#1,d0
 	cmp.b	#32,d0
-	beq	.scroll
+	bcc	.cursordown1
 	move.w	d0,.row
+.cursordown1:
+	rts
+
+	; reverse line feed = cursor up + scroll
+.reverselinefeed:
+	move.w	.row,d0
+	subq.w	#1,d0
+	bmi	.reverselinefeed1
+	move.w	d0,.row
+.reverselinefeed1:
 	rts
 
 	; cursor up
@@ -446,12 +647,19 @@ conout:
 	and.w	#$f8,d0
 	add.w	#8,d0
 	cmp.w	#80,d0
-	bcc	.boline
+	bcc	.tab1
 	move.w	d0,.column
+.tab1:
+	rts
+
+.home	; home
+	move.w	#0,.column
+	move.w	#0,.row
 	rts
 
 	; clear screen
 .cls:
+	bsr	.home
 	bsr	waitblit
 	lea	CUSTOM,a0
 	move.l	#screen,BLTDPTH(a0)		; destination address (bltdpth)
@@ -461,11 +669,41 @@ conout:
 	move.w	#((256<<6)|(80/2)),BLTSIZE(a0)	; height = 256, width = 40 words
 	rts
 
-	; scroll screen buffer
-.scroll:
+	; scroll screen buffer down by one line
+.scrolldown:
 	bsr	waitblit
 	lea	CUSTOM,a0
-	move.w	#31,.row
+	;move.w	#31,.row
+	move.l	#screen,d0
+	add.l	#8*80,d0
+	move.l	d0,BLTDPTH(a0)	; destination address (bltdpth)
+	move.l	#screen,d0
+	move.l	d0,BLTAPTH(a0)	; source address (bltapth)
+	move.w	#0,BLTAMOD(a0)	; zero modulo (bltamod)
+	move.w	#0,BLTDMOD(a0)	; zero modulo (bltdmod)
+	move.w	#-1,BLTAFWM(a0)	; first word mask (bltafwm)
+	move.w	#-1,BLTALWM(a0)	; last word mask (bltalwm)
+	move.w	#0,BLTCON1(a0)	; bltcon1
+	move.w	#$9f0,BLTCON0(a0)		; use A&D, minterm = A (bltcon0)
+	move.w	#((248<<6)|(80/2)),BLTSIZE(a0)	; height = 248, width = 40 words
+
+	; clear first line
+	bsr	waitblit
+	move.l	#screen,d0
+	;add.l	#248*80,d0
+	move.l	d0,BLTDPTH(a0)			; destination address (bltdpth)
+	move.w	#0,BLTDMOD(a0)			; zero modulo (bltdmod)
+	move.w	#0,BLTCON1(a0)			; bltcon1
+	move.w	#$100,BLTCON0(a0)		; use D, minterm = none (bltcon0)
+	move.w	#((8<<6)|(80/2)),BLTSIZE(a0)	; height = 8, width = 40 words
+	bsr	waitblit
+	rts
+
+	; scroll screen buffer up by one line
+.scrollup:
+	bsr	waitblit
+	lea	CUSTOM,a0
+	;move.w	#31,.row
 	move.l	#screen,d0
 	move.l	d0,BLTDPTH(a0)	; destination address (bltdpth)
 	add.l	#8*80,d0
@@ -477,6 +715,8 @@ conout:
 	move.w	#0,BLTCON1(a0)	; bltcon1
 	move.w	#$9f0,BLTCON0(a0)		; use A&D, minterm = A (bltcon0)
 	move.w	#((248<<6)|(80/2)),BLTSIZE(a0)	; height = 248, width = 40 words
+
+	; clear last line
 	bsr	waitblit
 	move.l	#screen,d0
 	add.l	#248*80,d0
@@ -488,53 +728,7 @@ conout:
 	bsr	waitblit
 	rts
 
-	; handle escape sequence
-.escape:
-	move.w	#1,.escseq
-	rts
-.checksequence:
-	cmp.w	#1,.escseq	; check if = is expected
-	beq	.checkequal
-	cmp.w	#2,.escseq	; check if x coord expected
-	beq	.getx
-	bne	.gety	
-.checkequal:
-	cmp.b	#$3d,d1
-	bne	.notseq
-	move.w	#2,.escseq
-	rts
-.getx:
-	sub.w	#$20,d1
-	move.w	d1,.escx
-	move.w	#4,.escseq
-	rts
-.gety:
-	sub.w	#$20,d1
-	move.w	d1,.escy
-.movecursor:
-	move.w	.escx,d0	; store x if valid
-	bmi	.notseq
-	cmp.w	#COLS,d0
-	bcc	.notseq
-	move.w	d0,.column
-	move.w	.escy,d0	; store y if valid
-	bmi	.notseq
-	cmp.w	#ROWS,d0
-	bcc	.notseq
-	move.w	d0,.row
-.notseq:
-	clr.w	d0
-	move.w	d0,.escseq
-	move.w	d0,.escx
-	move.w	d0,.escy
-	rts
 
-
-.row:		dc.w	0
-.column:	dc.w	0
-.escseq		dc.w	0
-.escx		dc.w	0
-.escy		dc.w	0
 
 keyboard_int:
 	movem.l	d0-d1/a0-a1,-(sp)
@@ -1874,7 +2068,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.41 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.42 ***",13,10
         dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
