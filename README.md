@@ -29,9 +29,9 @@ A bootable disk image: https://github.com/juollila/cpm68k-amiga/blob/main/amiga/
 # Memory Map
 
 |Start Address |End Address |Description                      |
-|--------------|------------|---------------------------------|
-|0             |3ff         |Exception vectors                |
-|400           |5ffff       |Transient program area           |
+|:-------------|:-----------|:--------------------------------|
+|00000         |003ff       |Exception vectors                |
+|00400         |5ffff       |Transient program area           |
 |60000         |65fff       |BDOS and CCP                     |
 |66000         |7ffff       |BIOS, disk buffer, screen buffer |
 
@@ -44,7 +44,7 @@ file system (OFS, FFS or SFS).
 The structure of disk:
 
 |Start                |End                   |Description                      |
-|---------------------|----------------------|---------------------------------|
+|:--------------------|:---------------------|:--------------------------------|
 |Track 0, sector 0    |Track 0, sector 1     |Boot loader                      |
 |Track 0, sector 2    |Track 7, sector 10    |CCP, BDOS and BIOS               |
 |Track 8, sector 0    |Track 8, sector 7     |CP/M file system, directory area |
@@ -65,8 +65,39 @@ end
 
 # Terminal Emulation
 
-TBD
+SturmBIOS support both ADM-3A and VT-52 terminal emulation.
 
+ADM-3a control codes:
+|Control code    |Description                                               |
+|:---------------|:---------------------------------------------------------|
+|^H or backspace |Cursor left / backspace                                   |
+|^I or TAB       |Tabulator                                                 |
+|^J              |Line feed i.e. cursor down + scrolling if needed          |
+|^K              |Cursor up / vertical tab                                  |
+|^L              |Cursor right / form feed                                  |
+|^M              |Carriage return                                           |
+|^Z              |Move cursor home and clear screen                         |
+|ESC = row col   |Move cursor position, add $20 to row and col              |
+
+VT-52 control codes:
+|Control code    |Description                                               |
+|:---------------|:---------------------------------------------------------|
+|^H or backspace |Cursor left / backspace                                   |
+|^I or TAB       |Tabulator                                                 |
+|^J		 |Line feed i.e. cursor down + scrolling if needed          |
+|^K              |Cursor up / vertical tab                                  |
+|^L              |Cursor right / form feed                                  |
+|^M              |Carriage return                                           |
+|^Z              |Move cursor home and clear screen                         |
+|ESC A           |Cursor up without scrolling                               |
+|ESC B           |Cursor down without scrolling                             |
+|ESC C           |Cursor right                                              |
+|ESC D           |Cursor left / backspace                                   |
+|ESC H           |Move cursor home                                          |
+|ESC I           |Cursor up + scrolling if needed                           |
+|ESC J           |Erase to end of screen                                    |
+|ESC K           |Erase to end of line                                      |
+|ESC Y col row   |Cursor position, add $20 to col and row                   |
 
 # Restrictions
 

@@ -263,12 +263,12 @@ waitblit:
 	rts
 
 notimplemented:
+	bsr	printcr
 	lsr	#2,d0
 	bsr	printbyte
-	bsr	printcr
 	lea	not_implemented_str,a0
 	bsr	printstring
-.halt:	jmp	.halt
+	clr.l	d0
 	rts
 
 ; Function 1: Warm boot
@@ -448,21 +448,10 @@ conout:
 	add.l	d1,d0		; character address = column address + row address in font
 	add.l	#font,d0
 	movea.l	d0,a0
-	; calculate destination address in screen
-	move.w	.row,d0
-	mulu.w	#80*8,d0
-	move.w	.column,d1
-	add.l	d1,d0
-	add.l	#screen,d0
-	movea.l	d0,a1
-	bsr	waitblit	; we don't want mess up with screen if screen blit is ongoing
 	; copy character to screen
-	moveq	#8,d0
-.loop:	move.b	(a0),(a1)
-	add.l	#16,a0
-	add.l	#80,a1
-	subq	#1,d0
-	bne	.loop
+	move.w	.row,d0
+	move.w	.column,d1
+	bsr	.conout2
 	; update cursor position
 	move.w	.column,d0
 	addq.w	#1,d0
@@ -475,35 +464,63 @@ conout:
 	move.w	d0,.column
 	rts
 
+; conout2 - copy character to screen
+;
+; Input parameters: a0.l = address of character
+;                   d0.w = row
+;                   d1.w = column
+.conout2:
+	; calculate destination address in screen
+	movem.l	d0-d1/a0,-(sp)
+	mulu.w	#80*8,d0
+	add.l	d1,d0
+	add.l	#screen,d0
+	movea.l	d0,a1
+	bsr	waitblit	; we don't want mess up with screen if screen blit is ongoing
+	; copy character to screen
+	moveq	#8,d0
+.loop:	move.b	(a0),(a1)
+	add.l	#16,a0
+	add.l	#80,a1
+	subq	#1,d0
+	bne	.loop
+	movem.l	(sp)+,d0-d1/a0
+	rts	
+
 ; control characters
 
 ;	ADM-3A control codes
 ;
-;	ESC = row col		cursor position
-;	^H			cursor left
-;	^L			cursor right
-;	^J			cursor down
-;	^K			cursor up
+;	^H or backspace		cursor left / backspace
+;	^I or TAB		tab
+;	^J			line feed = cursor down + scrolling 
+;	^K			cursor up / vertical tab
+;	^L			cursor right / form feed
+;	^M			carriage return
 ;	^Z			home and clear screen
-;	^M			carrage return
-;	TODO: ^G		bell
+;	ESC = row col		cursor position, add $20 to row and col so that a character is printable
 ;
 ;
 ;	VT-52 control codes
 ;
-;	TODO: line feed
-;	TODO: cursor down
-;	TODO: referse line feed
-;	TODO: cursor up
-;	TODO: cursor right
-;	TODO: backspace, or cursor left
-;	TODO: carriage return
-;	TODO: cursor home
-;	TODO: tab
-;	TODO: direct cursor addressing ESC Y
-;	TODO: erase to end of line
-;	TODO: erase to end of screen
-;	TODO: bell
+;	^H or backspace		cursor left / backspace
+;	^I or TAB		tab
+;	^J			line feed = cursor down + scrolling
+;	^K			cursor up / vertical tab
+;	^L			cursor right / form feed
+;	^M			carriage return
+;	^Z			home and clear screen
+;	ESC A			cursor up without scrolling
+;	ESC B			cursor down without scrolling
+;	ESC C			cursor right
+;	ESC D			cursor left / backspace
+;	ESC H			cursor home
+;	ESC I			cursor up with scrolling 
+;	ESC J			erase to end of screen
+;	ESC K			erase to end of line
+;	ESC Y col row 		cursor position, add $20 to col and row so that a character is printable
+;
+;	TODO: ^G		bell
 
 .ctrltable:
 	;dc.b	7		; bell / ctrl + g
@@ -554,12 +571,13 @@ conout:
 	dc.l	.cursorleft
 	dc.l	.home
 	dc.l	.loadcursorvt52
-	;dc.l	.eraeol		; erase to end of line
-	;dc.l	.eraeos		; erase to end of screen
+	dc.l	.eraeol		; erase to end of line
+	dc.l	.eraeos		; erase to end of screen
 
 	; go to beginning of line
 .boline:
 	move.w	#0,.column
+	move.w	#0,.escseq
 	rts
 
 	; line feed = cursor down + scroll
@@ -569,6 +587,7 @@ conout:
 	cmp.b	#32,d0
 	beq	.scrollup
 	move.w	d0,.row
+	move.w	#0,.escseq
 	rts
 
 .cursordown:
@@ -578,6 +597,7 @@ conout:
 	bcc	.cursordown1
 	move.w	d0,.row
 .cursordown1:
+	move.w	#0,.escseq
 	rts
 
 	; reverse line feed = cursor up + scroll
@@ -587,6 +607,7 @@ conout:
 	bmi	.reverselinefeed1
 	move.w	d0,.row
 .reverselinefeed1:
+	move.w	#0,.escseq
 	rts
 
 	; cursor up
@@ -596,6 +617,7 @@ conout:
 	bmi	.cursorup1
 	move.w	d0,.row
 .cursorup1
+	move.w	#0,.escseq
 	rts
 
 	; cursor left
@@ -605,6 +627,7 @@ conout:
 	bmi	.cursorleft1
 	move.w	d0,.column
 .cursorleft1:
+	move.w	#0,.escseq
 	rts
 
 	; cursor right
@@ -615,6 +638,7 @@ conout:
 	bcc	.cursorright1
 	move.w	d0,.column
 .cursorright1:
+	move.w	#0,.escseq
 	rts
 
 	; make tab
@@ -626,11 +650,13 @@ conout:
 	bcc	.tab1
 	move.w	d0,.column
 .tab1:
+	move.w	#0,.escseq
 	rts
 
 .home	; home
 	move.w	#0,.column
 	move.w	#0,.row
+	move.w	#0,.escseq
 	rts
 
 	; clear screen
@@ -643,6 +669,7 @@ conout:
 	move.w	#0,BLTCON1(a0)			; bltcon1
 	move.w	#$100,BLTCON0(a0)		; use D, minterm = none (bltcon0)
 	move.w	#((256<<6)|(80/2)),BLTSIZE(a0)	; height = 256, width = 40 words
+	move.w	#0,.escseq
 	rts
 
 	; scroll screen buffer down by one line
@@ -665,7 +692,6 @@ conout:
 	; clear first line
 	bsr	waitblit
 	move.l	#screen,d0
-	;add.l	#248*80,d0
 	move.l	d0,BLTDPTH(a0)			; destination address (bltdpth)
 	move.w	#0,BLTDMOD(a0)			; zero modulo (bltdmod)
 	move.w	#0,BLTCON1(a0)			; bltcon1
@@ -700,6 +726,52 @@ conout:
 	move.w	#$100,BLTCON0(a0)		; use D, minterm = none (bltcon0)
 	move.w	#((8<<6)|(80/2)),BLTSIZE(a0)	; height = 8, width = 40 words
 	bsr	waitblit
+	rts
+
+	; erase to end of line
+.eraeol:
+	bsr	.eraeol2
+	move.w	#0,.escseq
+	rts
+
+.eraeol2:
+	lea	font,a0				; address of space character
+	move.w	.row,d0
+	move.w	.column,d1
+.eraeol1:
+	bsr	.conout2
+	addq.w	#1,d1
+	cmp.w	#80,d1
+	bne	.eraeol1
+	rts
+
+
+	; erase to end of screen
+.eraeos:
+	bsr	.eraeol2			; clear to end of line
+	move.w	.row,d0
+	addq.w	#1,d0
+	cmp.w	#32,d0
+	bcc	.eraeos1
+	; clear all following lines
+	bsr	waitblit
+	move.w	d0,d1
+	mulu.w	#80*8,d0			; calculate destination address
+	add.l	#screen,d0
+	lea	CUSTOM,a0
+	move.l	d0,BLTDPTH(a0)			; destination address (bltdpth)
+	move.w	#0,BLTDMOD(a0)			; zero modulo (bltdmod)
+	move.w	#0,BLTCON1(a0)			; bltcon1
+	move.w	#$100,BLTCON0(a0)		; use D, minterm = none (bltcon0)
+	move.w	#32,d0
+	sub.w	d1,d0				; 32 - row
+	move.w	#9,d1
+	lsl.w	d1,d0				; ((32 - row) * 8 ) << 6
+	or.w	#40,d0				; width = 40 words
+	move.w	d0,BLTSIZE(a0)
+	bsr	waitblit
+.eraeos1:
+	move.w	#0,.escseq
 	rts
 
 
@@ -2031,7 +2103,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.44 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.45 ***",13,10
         dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
@@ -2052,7 +2124,7 @@ write_protected_str:
 no_flush_str:
 	dc.b	13,10,"BIOS Error: Cannot flush",13,10,0
 not_implemented_str:
-	dc.b	13,10,"BIOS Error: Not implemented",13,10,0
+	dc.b	" BIOS Error: Not implemented",13,10,0
 	even
 
 ; keymap (raw code to ascii)
