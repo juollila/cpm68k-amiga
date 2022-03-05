@@ -1,0 +1,83 @@
+      UPUTSTVO ZA RAD SA MicroEMACS EKRANSKIM EDITOROM ME.68K ZA CP/M-68K
+      -------------------------------------------------------------------
+
+
+
+
+LEFT		CTRL B		BACKCHAR	Move backward by characters
+RIGHT		CTRL F		FORWCHAR	Move forward by characters
+UP		CTRL P		BACKLINE	Move backward by lines
+DOWN		CTRL N		FORWLINE	Move forward by lines
+TAB		CTRL I		TAB		Insert tab
+RETURN		CTRL M		NEWLINE		Insert CR-LF
+		CTRL J		INDENT		Insert CR-LF, then indent
+		CTRL L		REFRESH		Refresh the screen
+		CTRL A		GOTOBOL		Move to start of line
+		CTRL E		GOTOEOL		Move to end of line
+		ESC  V		BACKPAGE	Move backward by pages
+		CTRL V		FORWPAGE	Move forward by pages
+		ESC  <		GOTOBOB		Move to start of buffer
+		ESC  >		GOTOEOB		Move to end of buffer
+		ESC  !		REPOSITION	Reposition window
+BACKSPACE	CTRL H		BACKDEL		Backward delete
+		DEL		BACKDEL		Backward delete
+		CTRL D		FORWDEL		Forward delete
+		CTRL K		KILL		Kill forward
+		CTRL Y		YANK		Yank back from killbuffer
+		CTRL O		OPENLINE	Open up a blank line
+		CTRL X CTRL O	DEBLANK		Delete blank lines
+		ESC  Q		QUOTE		Insert literal
+		CTRL Q		QUOTE		Insert literal
+		CTRL T		TWIDDLE		Twiddle characters
+		CTRL X F	SETFILLCOL	Set fill column
+		CTRL U		ARG		Set argument number
+		CTRL G		CTRLG		Abort out of things
+		CTRL X =	SHOWCPOS	Show the cursor position
+		CTRL X (	CTLXLP		Begin macro
+		CTRL X )	CTLXRP		End macro
+		CTRL X E	CTLXE		Execute macro
+		CTRL X CTRL C	QUIT		Quit
+		CTRL Z		QUICKEXIT	Low keystroke style exit
+		CTRL C		SPAWNCLI	Run CLI in a subjob
+		CTRL X !	SPAWN		Run a command in a subjob
+
+		ESC  B		BACKWORD	Backup by words
+		ESC  F		FORWWORD	Advance by words
+ESC BACKSPACE	ESC  CTRL H	DELBWORD	Delete backward word
+		ESC  DEL	DELBWORD	Delete backward word
+		ESC  D		DELFWORD	Delete forward word
+		ESC  C		CAPWORD		Initial capitalize word
+		ESC  L		LOWERWORD	Lower case word
+		ESC  U		UPPERWORD	Upper case word
+		ESC  R		BACKSEARCH	Search backwards
+		CTRL R		BACKSEARCH	Search backwards
+		ESC  S		FORWSEARCH	Search forward
+		CTRL S		FORWSEARCH	Search forward
+
+		CTRL X CTRL F	FILENAME	Adjust file name
+		CTRL X CTRL R	FILEREAD	Get a file, read only
+		CTRL X CTRL S	FILESAVE	Save current file
+		CTRL X CTRL V	FILEVISIT	Get a file, read write
+		CTRL X CTRL W	FILEWRITE	Write a file
+
+		CTRL X B	USEBUFFER	Switch a window to a buffer
+		CTRL X K	KILLBUFFER	Make a buffer go away
+		CTRL X CTRL B	LISTBUFFERS	Display list of buffers
+
+		ESC  .		SETMARK		Set mark
+		CTRL @		SETMARK		Set mark
+		CTRL X CTRL X	SWAPMARK	Swap "." and mark
+		ESC  W		COPYREGION	Copy region to kill buffer
+		CTRL W		KILLREGION	Kill region
+		CTRL X CTRL L	LOWERREGION	Lower case region
+		CTRL X CTRL U	UPPERREGION	Upper case region
+
+		CTRL X 1	ONLYWIND	Make current window only one
+		CTRL X 2	SPLITWIND	Split current window
+		CTRL X N	NEXTWIND	Move to the next window
+		CTRL X P	PREVWIND	Move to the previous window
+		CTRL X CTRL N	MVDNWIND	Move window down
+		CTRL X CTRL P	MVUPWIND	Move window up
+		CTRL X Z	ENLARGEWIND	Enlarge display window
+		CTRL X CTRL Z	SHRINKWIND	Shrink window
+

@@ -324,12 +324,24 @@ conin:	bsr	constatus
 ; Return value: None
 ;
 conout:
+	bsr	.cursorxor	; remove cursor highlight
 	and.l	#$000000ff,d1	; use only low byte
 	cmp.w	#0,.escseq	; check if esc sequence is ongoing
-	bne	.checkescapesequence
+	beq	.check1		; branch if not esc sequence
+	bsr	.checkescapesequence
+	bra	.check3
+.check1:
 	cmp.b	#$20,d1		; check if ctrl character
-	bcc	.conout1	; branch if not ctrl character
+	bcc	.check2		; branch if not control code
+	bsr	.handlectrl
+	bra	.check3
+.check2:
+	bsr	.conout1	; print normal char
+.check3:
+	bsr	.cursorxor	; enable cursor highlight
+	rts
 
+.handlectrl:
 	; handle control code
 	move.l	d2,-(sp)
 	lea	.ctrltable,a0
@@ -438,6 +450,28 @@ conout:
 .escx		dc.w	0
 .escy		dc.w	0
 
+.cursorxor:
+	; calculate address in screen
+	movem.l	d0-d2/a0,-(sp)
+	move.w	.row,d0
+	move.w	.column,d1
+	mulu.w	#80*8,d0
+	add.w	d1,d0
+	lea	screen,a0
+	bsr	waitblit	; we don't want mess up with screen if screen blit is ongoing
+	; xor cursor position in screen
+	clr.w	d1
+.cursorxorloop:
+	move.b	(a0,d0.w),d2
+	eor.b	#$ff,d2
+	move.b	d2,(a0,d0.w)
+	add.w	#80,d0
+	addq.w	#1,d1
+	cmp.w	#8,d1
+	bne	.cursorxorloop
+	movem.l	(sp)+,d0-d2/a0
+	rts
+
 .conout1:
 	; calculate character address in font
 	sub.b	#$20,d1		; space is first character in font
@@ -471,7 +505,7 @@ conout:
 ;                   d1.w = column
 .conout2:
 	; calculate destination address in screen
-	movem.l	d0-d1/a0,-(sp)
+	movem.l	d0-d1/a0-a1,-(sp)
 	mulu.w	#80*8,d0
 	add.l	d1,d0
 	add.l	#screen,d0
@@ -484,7 +518,7 @@ conout:
 	add.l	#80,a1
 	subq	#1,d0
 	bne	.loop
-	movem.l	(sp)+,d0-d1/a0
+	movem.l	(sp)+,d0-d1/a0-a1
 	rts	
 
 ; control characters
@@ -2103,7 +2137,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.45 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.46 ***",13,10
         dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
