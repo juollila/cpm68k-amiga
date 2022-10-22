@@ -33,7 +33,7 @@ BIOSSTART	= $66000	; Start of BIOS
 
 ; Custom chip register offsets
 DMACONR = $002	; DMA control read
-INTREQR = $01e  ; Interrupt request bits read
+INTREQR = $01e	; Interrupt request bits read
 DSKPTH	= $020	; Disk track buffer pointer (high)
 DSKLEN	= $024	; Disk track buffer length
 BLTCON0 = $040	; Blitter control register 0
@@ -88,7 +88,7 @@ BLOCKSIZE	= 2048	; CPM FS block size
 DIRENTRIES	= 128	; CPM directory entries
 DRIVES		= 2	; Only 2 floppy drives supported (Amiga can support upto 4)
 MFM_TRACKSIZE	= 13630 ; MFM track size
-GAPSIZE		= 1656  ; 13630 - (11*(64+512+512)) - 4 = 1658, 1656 is divisible by 4
+GAPSIZE		= 1656	; 13630 - (11*(64+512+512)) - 4 = 1658, 1656 is divisible by 4
 
 ; Offsets in floppy drive structure
 FD_TRACK	= 0
@@ -126,7 +126,11 @@ CRB	= $f00	; Control register B
 ;	d0.w: $00
 ; Return value: d0.w: user/disk numbers
 ;
-_init:	
+bios_start:
+	bra _init
+boot_drive:
+	dc.w	0
+_init:
 	lea	CIAA,a0
 	lea	CIAB,a1
 	lea	CUSTOM,a6
@@ -148,13 +152,15 @@ _init:
 	lea	CPMSTRING,a0
 	bsr	printstring
 	bsr	printcr
-	move.w	#0,d0				; select drive A: (0)
+	move.w	boot_drive,d0			; select boot drive
+	;move.w	#1,d0				; drive B:
 	move.w	d0,fd_drive
 	bsr	fd_select
 	bsr	fd_sync				; synchronize drive
 	bsr	fd_deselect			; deselect drive
 	move	#$2000,sr			; probably not needed
-	clr.l	d0				; log on disk A, user 0
+	clr.l	d0				; log on boot drive, user 0
+	move.w	boot_drive,d0
 	rts					; return to BDOS
 
 takeover:
@@ -836,7 +842,7 @@ keyboard_int:
 	and.b	#$1f,d1			; clear 3 top most bits
 	bra	.storekey
 .noshift:
-	move.b  0(a0,d0),d1
+	move.b	0(a0,d0),d1
 .storekey:
 	move.w	key_index.l,d0
 	bmi	.exit
@@ -2137,8 +2143,8 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.46 ***",13,10
-        dc.b    "***   Coded by Juha Ollila  2021-2022   ***",13,10,13,10,0
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.47 ***",13,10
+	dc.b	"***   Coded by Juha Ollila  2021-2022   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
 dma_error_str:

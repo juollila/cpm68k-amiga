@@ -90,6 +90,21 @@ adf: boot-with-checksum.bin
 	mkfs.cpm -f amiga -b boot-with-checksum.bin ../adf/cpm-extras.adf
 	cpmcp -f amiga ../adf/cpm-extras.adf ../extras/uemacs/*.* 0:
 
+	#cp ../adf/cpm-blank.adf ../adf/cpm-pascal.adf
+	#mkfs.cpm -f amiga -b boot-with-checksum.bin ../adf/cpm-pascal.adf
+	#cpmcp -f amiga ../adf/cpm-pascal.adf ../../cpm/mtplus68/*.* 0:
+	#cpmcp -f amiga ../adf/cpm-pascal.adf ../../cpm/c/link68.68k 0:
+	#cpmcp -t -f amiga ../adf/cpm-pascal.adf ../extras/chipmunk/*.* 0:
+	
+	#cp ../adf/cpm-blank.adf ../adf/cpm-stevie.adf
+	#mkfs.cpm -f amiga -b boot-with-checksum.bin ../adf/cpm-stevie.adf
+	#cpmcp -t -f amiga ../adf/cpm-stevie.adf ../extras/stevie/*.* 0:
+
+	cp ../adf/cpm-boot.adf cpm-60000.adf
+	cp ../adf/cpm-extras.adf .
+	#cp ../adf/cpm-pascal.adf .
+	#cp ../adf/cpm-stevie.adf .
+
 clean:
 	rm -f *.bin
 	rm -f *.adf
