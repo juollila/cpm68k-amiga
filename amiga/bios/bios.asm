@@ -1,6 +1,6 @@
 ; CP/M-68k BIOS for Amiga
 ;
-; Copyright (c) 2021 Juha Ollila
+; Copyright (c) 2021-2024 Juha Ollila
 ; 
 ; Permission is hereby granted, free of charge, to any person obtaining a copy
 ; of this software and associated documentation files (the "Software"), to deal
@@ -56,6 +56,10 @@ DMACON	= $096	; DMA control write
 INTENA	= $09a	; Interrupt enable bits
 INTREQ	= $09c	; Interrupt request bits
 ADKCON	= $09e	; Audio, disk and UART control
+AUD0LCH	= $0a0	; Audio channel 0 location
+AUD0LEN	= $0a4	; Audio channel 0 length
+AUD0PER	= $0a6	; Audio channel 0 period
+AUD0VOL	= $0a8	; Audio channel 0 volume
 BPL1PTH	= $0e0	; Bitplane pointer 1 (high)
 BPLCON0	= $100	; Bitplane depth and screen mode
 BPLCON1	= $102	; Bitplane/playfield horizontal scroll values
@@ -543,6 +547,7 @@ conout:
 ;
 ;	VT-52 control codes
 ;
+;	^G			bell
 ;	^H or backspace		cursor left / backspace
 ;	^I or TAB		tab
 ;	^J			line feed = cursor down + scrolling
@@ -560,10 +565,9 @@ conout:
 ;	ESC K			erase to end of line
 ;	ESC Y col row 		cursor position, add $20 to col and row so that a character is printable
 ;
-;	TODO: ^G		bell
 
 .ctrltable:
-	;dc.b	7		; bell / ctrl + g
+	dc.b	7		; bell / ctrl + g
 	dc.b	8		; cursor left / backspace / ctrl+h
 	dc.b	9		; tab / ctrl+i
 	dc.b	$a		; cursor down / line feed / ctrl+j
@@ -577,7 +581,7 @@ conout:
 	even
 
 .ctrladdresstable:
-	;dc.l	.bell
+	dc.l	.bell
 	dc.l	.cursorleft
 	dc.l	.tab
 	dc.l	.linefeed	; cursor down + scroll
@@ -613,6 +617,25 @@ conout:
 	dc.l	.loadcursorvt52
 	dc.l	.eraeol		; erase to end of line
 	dc.l	.eraeos		; erase to end of screen
+
+	; make a "bell" sound
+.bell:	
+    lea     CUSTOM,a0
+    move.w  #1,DMACON(a0)           ; disable audio channel 0
+    move.l  #.bellsound,AUD0LCH(a0) ; location of "sample"
+    move.w  #4,AUD0LEN(a0)          ; sample length = 4 words
+    move.w  #32,AUD0VOL(a0)         ; volume
+    move.w  #886,AUD0PER(a0)        ; 500Hz(?)
+    move.w  #$8001,DMACON(a0)       ; enable audio channel 0
+    move.w  #10,d0                  ; 10 ms delay
+    bsr delay
+    move.w  #0,AUD0VOL(a0)
+    move.w  #1,DMACON(a0)           ; disable audio channel 0
+    rts
+
+.bellsound:
+	dc.b	-128, -128, -128, -128, 127, 127, 127, 127
+	even
 
 	; go to beginning of line
 .boline:
@@ -1977,6 +2000,7 @@ printlong:
 	rts
 
 hex:	dc.b	"0123456789ABCDEF"
+	even
 
 ;
 ; timer routines
@@ -2143,8 +2167,8 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.47 ***",13,10
-	dc.b	"***   Coded by Juha Ollila  2021-2022   ***",13,10,13,10,0
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.48 ***",13,10
+	dc.b	"***   Coded by Juha Ollila  2021-2024   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
 dma_error_str:

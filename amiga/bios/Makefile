@@ -100,11 +100,6 @@ adf: boot-with-checksum.bin
 	#mkfs.cpm -f amiga -b boot-with-checksum.bin ../adf/cpm-stevie.adf
 	#cpmcp -t -f amiga ../adf/cpm-stevie.adf ../extras/stevie/*.* 0:
 
-	cp ../adf/cpm-boot.adf cpm-60000.adf
-	cp ../adf/cpm-extras.adf .
-	#cp ../adf/cpm-pascal.adf .
-	#cp ../adf/cpm-stevie.adf .
-
 clean:
 	rm -f *.bin
 	rm -f *.adf
