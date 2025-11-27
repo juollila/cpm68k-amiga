@@ -11,8 +11,11 @@ boot.bin: boot_loader.asm cpm.bin
 	vasmm68k_mot boot_loader.asm -Fbin -o boot.bin
 	python3 ../tools/checksum.py --output boot-with-checksum.bin boot.bin
 
-adf: boot-with-checksum.bin
-	cp ../adf/cpm-blank.adf ../adf/cpm-boot.adf
+format.68k: ../programs/format.asm
+	vasmm68k_mot ../programs/format.asm -Fbin -o format.68k
+
+adf: boot-with-checksum.bin format.68k
+	cp ../adf/amiga-blank-dd-ffs.adf ../adf/cpm-boot.adf
 	mkfs.cpm -f amiga -b boot-with-checksum.bin ../adf/cpm-boot.adf
 	# disk 1
 	cpmcp -f amiga ../adf/cpm-boot.adf ../../cpm/c/copy.68k 0:
@@ -85,22 +88,29 @@ adf: boot-with-checksum.bin
 	# cpmcp -f amiga ../adf/cpm-boot.adf ../../cpm/disks/DISK6/TERMA.S 0:
 	# cpmcp -f amiga ../adf/cpm-boot.adf ../../cpm/disks/DISK6/XFER86.C 0:
 	# cpmcp -f amiga ../adf/cpm-boot.adf ../../cpm/disks/DISK6/XFER86.REL 0:
-	#
-	cp ../adf/cpm-blank.adf ../adf/cpm-extras.adf
+
+	# Extra programs
+	cpmcp -f amiga ../adf/cpm-boot.adf ./format.68k 0:
+
+	# Make extras disk
+	cp ../adf/amiga-blank-dd-ffs.adf ../adf/cpm-extras.adf
 	mkfs.cpm -f amiga -b boot-with-checksum.bin ../adf/cpm-extras.adf
 	cpmcp -f amiga ../adf/cpm-extras.adf ../extras/uemacs/*.* 0:
 
-	#cp ../adf/cpm-blank.adf ../adf/cpm-pascal.adf
+	#cp ../adf/amiga-blank-dd-ffs.adf ../adf/cpm-pascal.adf
 	#mkfs.cpm -f amiga -b boot-with-checksum.bin ../adf/cpm-pascal.adf
 	#cpmcp -f amiga ../adf/cpm-pascal.adf ../../cpm/mtplus68/*.* 0:
 	#cpmcp -f amiga ../adf/cpm-pascal.adf ../../cpm/c/link68.68k 0:
 	#cpmcp -t -f amiga ../adf/cpm-pascal.adf ../extras/chipmunk/*.* 0:
 	
-	#cp ../adf/cpm-blank.adf ../adf/cpm-stevie.adf
+	#cp ../adf/amiga-blank-dd-ffs.adf ../adf/cpm-stevie.adf
 	#mkfs.cpm -f amiga -b boot-with-checksum.bin ../adf/cpm-stevie.adf
 	#cpmcp -t -f amiga ../adf/cpm-stevie.adf ../extras/stevie/*.* 0:
 
 clean:
 	rm -f *.bin
 	rm -f *.adf
+	rm -f ../adf/cpm-boot.adf
+	rm -f ../adf/cpm-extras.adf
+	rm -f *.68k
 

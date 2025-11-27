@@ -1,6 +1,6 @@
 ; CP/M-68k BIOS for Amiga
 ;
-; Copyright (c) 2021-2024 Juha Ollila
+; Copyright (c) 2021-2025 Juha Ollila
 ; 
 ; Permission is hereby granted, free of charge, to any person obtaining a copy
 ; of this software and associated documentation files (the "Software"), to deal
@@ -2167,8 +2167,8 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.48 ***",13,10
-	dc.b	"***   Coded by Juha Ollila  2021-2024   ***",13,10,13,10,0
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.49 ***",13,10
+	dc.b	"***   Coded by Juha Ollila  2021-2025   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
 dma_error_str:
