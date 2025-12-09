@@ -227,6 +227,12 @@ initserial:
 	move.w	#1,d4
 	bsr	setserialparams
 	move.w	#$8001,CUSTOM+INTREQ	; set TBE interrupt flag
+	move.w	#0,serial_read_index
+	move.w	#0,serial_write_index
+	move.l	#serial_rbf_int,$74.w	; serial receiver buffer full interrupt to level 5 autovector
+	move.w	INTENAR(a6),d0		; read interrupt enable bits
+	or.w	#$c800,d0		; enable RBF interrupts
+	move.w	d0,INTENA(a6)
 	rts	
 
 initfloppy:
@@ -986,7 +992,6 @@ auxout:
 ;
 ; Entry parameters:
 ;	d0.w: $07
-;	d1.w: Character
 ; Return value:
 ;	d0.w: Character
 ;
@@ -994,9 +999,7 @@ auxin:
 	bsr	auxinstatus
 	cmp.w	#0,d0
 	beq	auxin
-	move.w	CUSTOM+SERDATR,d0
-	move.w	#$800,CUSTOM+INTREQ	; clear RBF interrupt flag
-	and.w	#$ff,d0
+	bsr	read_serial_buffer
 	rts
 
 ;
@@ -1022,12 +1025,67 @@ auxoutstatus:
 ;   d0.w: $00ff if ready
 ;   d0.w: $0000 if not ready
 auxinstatus:
-	move.w	CUSTOM+INTREQR,d0
-	and.w	#$800,d0		; check RBF flag
-	beq	.exit
-	move.w	#$ff,d0
+	movem.l	d1-d2,-(sp)
+	move.w	#0,d0
+	move.w	serial_read_index,d1
+	move.w	serial_write_index,d2
+	cmp.w	d1,d2
+	beq	.exit			; branch if fifo empty
+	move.w	#$ff,d0	
 .exit:
+	movem.l	(sp)+,d1-d2
 	rts
+
+; Write byte to serial buffer/FIFO
+;
+; Entry parameters:
+;	d0.b: byte to serial buffer/FIFO
+write_serial_buffer:
+	movem.l d1-d2/a0,-(sp)
+	lea	serial_buffer,a0
+	move.w	serial_read_index,d1
+	move.w	serial_write_index,d2
+	addq.w	#1,d2			; next write index
+	and.w	#$ff,d2
+	cmp.w	d1,d2			; check if full queue
+	beq	.exit
+	move.b	d0,(a0,d2.w)
+	move.w	d2,serial_write_index
+.exit:
+	movem.l	(sp)+,d1-d2/a0
+	rts	
+
+; Read byte from serial buffer/FIFO
+;
+; Entry parameters: None
+; Return value:
+;	d0.w: byte from serial buffer/FIFO
+read_serial_buffer:
+	movem.l d1/a0,-(sp)
+	lea	serial_buffer,a0
+	move.w	serial_read_index,d1
+	move.b	(a0,d1.w),d0
+	and.w	#$ff,d0
+	addq.w	#1,d1
+	and.w	#$ff,d1
+	move.w	d1,serial_read_index
+	movem.l	(sp)+,d1/a0
+	rts
+
+; Serial receive buffer full interrupt
+serial_rbf_int:
+	move.l	d0,-(sp)
+	move.w	CUSTOM+INTREQR,d0	; check if RBF int
+	and.w	#$800,d0
+	beq	.exit
+	move.w	CUSTOM+SERDATR,d0	; read byte from serial data
+	move.w	#$800,CUSTOM+INTREQ	; clear RBF interrupt flag
+	bsr	write_serial_buffer
+.exit:
+	move.l	(sp)+,d0
+	rte
+	
+	
 
 ;
 ; Function : Home
@@ -2200,6 +2258,12 @@ serial_parity:
 	dc.w	0
 serial_stop_bits:
 	dc.w	0
+serial_read_index:
+	dc.w	0
+serial_write_index:
+	dc.w	0
+serial_buffer:
+	blk.b	256,0
 
 ; floppy variables
 fd_write:
@@ -2306,7 +2370,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.50 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.51 ***",13,10
 	dc.b	"***   Coded by Juha Ollila  2021-2025   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
