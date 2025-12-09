@@ -33,9 +33,12 @@ BIOSSTART	= $66000	; Start of BIOS
 
 ; Custom chip register offsets
 DMACONR = $002	; DMA control read
+SERDATR = $018	; Serial port data and status read
 INTREQR = $01e	; Interrupt request bits read
 DSKPTH	= $020	; Disk track buffer pointer (high)
 DSKLEN	= $024	; Disk track buffer length
+SERDAT	= $030	; Serial port data and stop bits write
+SERPER	= $032	; Serial port period and control
 BLTCON0 = $040	; Blitter control register 0
 BLTCON1 = $042	; Blitter control register 1
 BLTAFWM	= $044	; Blitter first word mask for source A
@@ -61,6 +64,7 @@ AUD0LEN	= $0a4	; Audio channel 0 length
 AUD0PER	= $0a6	; Audio channel 0 period
 AUD0VOL	= $0a8	; Audio channel 0 volume
 BPL1PTH	= $0e0	; Bitplane pointer 1 (high)
+INTENAR = $01c	; Interrupt enable bits (read)
 BPLCON0	= $100	; Bitplane depth and screen mode
 BPLCON1	= $102	; Bitplane/playfield horizontal scroll values
 BPL1MOD	= $108	; Bitplane modulo (odd planes)
@@ -142,6 +146,7 @@ _init:
 	bsr	initscreen
 	bsr	inittimers
 	bsr	initkeyboard
+	bsr	initserial
 	bsr	initfloppy
 	bsr	inittrap
 
@@ -156,16 +161,16 @@ _init:
 	lea	CPMSTRING,a0
 	bsr	printstring
 	bsr	printcr
-	move.w	boot_drive,d0			; select boot drive
-	;move.w	#1,d0				; drive B:
+	move.w	boot_drive,d0		; select boot drive
+	;move.w	#1,d0			; drive B:
 	move.w	d0,fd_drive
 	bsr	fd_select
-	bsr	fd_sync				; synchronize drive
-	bsr	fd_deselect			; deselect drive
-	move	#$2000,sr			; probably not needed
-	clr.l	d0				; log on boot drive, user 0
+	bsr	fd_sync			; synchronize drive
+	bsr	fd_deselect		; deselect drive
+	move	#$2000,sr		; probably not needed
+	clr.l	d0			; log on boot drive, user 0
 	move.w	boot_drive,d0
-	rts					; return to BDOS
+	rts				; return to BDOS
 
 takeover:
 	; take over system
@@ -209,8 +214,19 @@ inittimers:
 
 initkeyboard:
 	move.b	#$88,ICR(a0)		; enable serial port interrupt in CIAA
-	move.l	#keyboard_int,$68.w	; keyboard interrupt vector to level 2 autovector
-	move.w	#$c008,INTENA(a6)	; enable CIAA interrupts
+	move.l	#keyboard_int,$68.w	; keyboard interrupt to level 2 autovector
+	move.w	INTENAR(a6),d0		; read interrupt enable bits
+	or.w	#$c008,d0		; enable CIAA interrupts
+	move.w	d0,INTENA(a6)
+	rts	
+
+initserial:
+	move.w	#9600,d1		; set serial default parameters
+	move.w	#8,d2
+	move.w	#0,d3
+	move.w	#1,d4
+	bsr	setserialparams
+	move.w	#$8001,CUSTOM+INTREQ	; set TBE interrupt flag
 	rts	
 
 initfloppy:
@@ -229,16 +245,33 @@ inittrap:
 	rts
 
 traphandler:
-	cmp	#NUMBER_OF_FUNCTIONS,d0
-	bcc	.skip
+	cmp.w	#100,d0			; check if xbios function
+	bcs	.biosfunction
+	cmp.w	#(100+XBIOS_FUNCTIONS),d0
+	bcc	.exit
+	sub.w	#100,d0
+	lsl	#2,d0			; multiply by 4
+	lea	xbiosbase,a0
+	move.l	(a0,d0.w),a0
+	bra	.callfunction
+.biosfunction:
+	cmp.w	#BIOS_FUNCTIONS,d0
+	bcc	.exit
 	lsl	#2,d0			; multiply by 4
 	lea	biosbase,a0
 	move.l	(a0,d0.w),a0
+.callfunction:
 	jsr	(a0)
-.skip:
+.exit:
 	rte
 
-NUMBER_OF_FUNCTIONS	= 23
+XBIOS_FUNCTIONS	= 2
+
+xbiosbase:
+	dc.l	getserialparams
+	dc.l	setserialparams
+
+BIOS_FUNCTIONS	= 23
 
 biosbase:
 	dc.l	_init
@@ -247,8 +280,8 @@ biosbase:
 	dc.l	conin
 	dc.l	conout
 	dc.l	notimplemented ;listchar
-	dc.l	notimplemented ;auxout
-	dc.l	notimplemented ;auxin
+	dc.l	auxout
+	dc.l	auxin
 	dc.l	home
 	dc.l	setdrive
 	dc.l	settrack
@@ -316,7 +349,8 @@ constatus:
 ; Return value:
 ;	d0.w: character
 ;
-conin:	bsr	constatus
+conin:
+	bsr	constatus
 	beq	conin
 	move.w	key_index.l,d1
 	and.l	#$ff,d1
@@ -535,6 +569,7 @@ conout:
 
 ;	ADM-3A control codes
 ;
+;	^G			bell
 ;	^H or backspace		cursor left / backspace
 ;	^I or TAB		tab
 ;	^J			line feed = cursor down + scrolling 
@@ -620,18 +655,18 @@ conout:
 
 	; make a "bell" sound
 .bell:	
-    lea     CUSTOM,a0
-    move.w  #1,DMACON(a0)           ; disable audio channel 0
-    move.l  #.bellsound,AUD0LCH(a0) ; location of "sample"
-    move.w  #4,AUD0LEN(a0)          ; sample length = 4 words
-    move.w  #32,AUD0VOL(a0)         ; volume
-    move.w  #886,AUD0PER(a0)        ; 500Hz(?)
-    move.w  #$8001,DMACON(a0)       ; enable audio channel 0
-    move.w  #10,d0                  ; 10 ms delay
-    bsr delay
-    move.w  #0,AUD0VOL(a0)
-    move.w  #1,DMACON(a0)           ; disable audio channel 0
-    rts
+	lea	CUSTOM,a0
+	move.w	#1,DMACON(a0)		; disable audio channel 0
+	move.l	#.bellsound,AUD0LCH(a0)	; location of "sample"
+	move.w	#4,AUD0LEN(a0)		; sample length = 4 words
+	move.w	#32,AUD0VOL(a0)		; volume
+	move.w	#886,AUD0PER(a0)	; 500Hz(?)
+	move.w	#$8001,DMACON(a0)	; enable audio channel 0
+	move.w	#10,d0			; 10 ms delay
+	bsr	delay
+	move.w	#0,AUD0VOL(a0)
+	move.w	#1,DMACON(a0)		; disable audio channel 0
+	rts
 
 .bellsound:
 	dc.b	-128, -128, -128, -128, 127, 127, 127, 127
@@ -934,7 +969,17 @@ listchar:
 ;	d0.w: Character
 ;
 auxout:
-	rts				; not implemented
+	bsr	auxoutstatus
+	cmp.w	#0,d0
+	beq	auxout
+	move.w	#1,CUSTOM+INTREQ	; clear TBE interrupt flag
+	move.w	d1,d0
+	and.w	#$ff,d0
+	or.w	#$100,d0		; set stop bit
+	move.w	d0,CUSTOM+SERDAT	; send byte
+	move.w	d1,d0			; return value
+	rts
+
 
 ;
 ; Function 5: Auxiliary input
@@ -946,7 +991,43 @@ auxout:
 ;	d0.w: Character
 ;
 auxin:
-	rts				; not implemented
+	bsr	auxinstatus
+	cmp.w	#0,d0
+	beq	auxin
+	move.w	CUSTOM+SERDATR,d0
+	move.w	#$800,CUSTOM+INTREQ	; clear RBF interrupt flag
+	and.w	#$ff,d0
+	rts
+
+;
+; Auxiliary output status
+;
+; Entry parameters: None
+; Return value:
+;   d0.w: $00ff if ready
+;   d0.w: $0000 if not ready
+auxoutstatus:
+	move.w	CUSTOM+INTREQR,d0
+	and.w	#1,d0			; check TBE flag
+	beq	.exit
+	move.w	#$ff,d0
+.exit:
+	rts
+
+;
+; Auxiliary input status
+;
+; Entry parameters: None
+; Return value:
+;   d0.w: $00ff if ready
+;   d0.w: $0000 if not ready
+auxinstatus:
+	move.w	CUSTOM+INTREQR,d0
+	and.w	#$800,d0		; check RBF flag
+	beq	.exit
+	move.w	#$ff,d0
+.exit:
+	rts
 
 ;
 ; Function : Home
@@ -1914,6 +1995,54 @@ fd_encode_track:
 	rts
 
 ;
+; XBIOS functions
+;
+
+; Get serial port parameters
+; Entry params: d0.w: $66
+; Returns: d0.w: Baud Rate (300, 1200, 2400, 4800, 9600, 14400, 19200, 38400, or 57600)
+;          d1.w: Data Bits (8)
+;          d2.w: Parity (0=None)
+;          d3.w: Stop Bits (1)
+getserialparams:
+	move.w	serial_baud_rate,d0
+	move.w	serial_data_bits,d1
+	move.w	serial_parity,d2
+	move.w	serial_stop_bits,d3
+	rts
+
+; Set serial port parameters
+; Entry params: d0.w: $65
+;               d1.w: Baud Rate (300, 1200, 2400, 4800, 9600, 14400, 19200, 38400, or 57600)
+;               d2.w: Data Bits (8)
+;               d3.w: Parity (0=None)
+;               d4.w: Stop Bits (1)
+; Returns: d0.w: $0000 (configuration was successful)
+;          d0.w: $ffff (configuration failed)
+setserialparams:
+	cmp.w	#0,d1			; check if divide by zero
+	beq	.error
+	move.w	d1,serial_baud_rate
+	cmp.w	#8,d2
+	bne	.error
+	move.w	d2,serial_data_bits
+	cmp.w	#0,d3
+	bne	.error
+	move.w	d3,serial_parity
+	cmp.w	#1,d4
+	bne	.error
+	move.w	d4,serial_stop_bits
+	move.l	#3546895,d0		; In PAL, SERPER = (3546895/BAUD_RATE)-1
+	divs	d1,d0
+	subq.w	#1,d0
+	move.w	d0,SERPER(a6)
+	move.w	#0,d0
+	rts
+.error:
+	move.w	#$ffff,d0
+	rts
+
+;
 ; print routines
 ;
 
@@ -2062,6 +2191,16 @@ caps_lock:
 ctrl_key:
 	dc.w	0
 
+; serial variables
+serial_baud_rate:
+	dc.w	0
+serial_data_bits:
+	dc.w	0
+serial_parity:
+	dc.w	0
+serial_stop_bits:
+	dc.w	0
+
 ; floppy variables
 fd_write:
 	dc.w	0
@@ -2167,7 +2306,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.49 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.50 ***",13,10
 	dc.b	"***   Coded by Juha Ollila  2021-2025   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0

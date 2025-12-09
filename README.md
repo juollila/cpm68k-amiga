@@ -19,8 +19,16 @@ quicker. But real HW is planned to be supported.
 
 CP/M-68k documentation can be found from https://github.com/juollila/cpm68k-amiga/tree/main/cpm/doc
 
-It is recommended that new users read User's Guide. If a user wants program then Programmer's Guide
+It is recommended that new users read User's Guide. If a user wants to program then Programmer's Guide
 and C Programming Guide are recommended.
+
+Amiga CP/M-68k supports the following additional commands:
+|Program       |Purpose                                           |
+|:-------------|:-------------------------------------------------|
+|format.68k    |Format disk and install CP/M to reserved tracks   |
+|setbaud.68k   |Set baud rate for the serial port                 |
+
+
 
 # Bootable Disk Image
 
@@ -70,6 +78,7 @@ SturmBIOS support both ADM-3A and VT-52 terminal emulation.
 ADM-3a control codes:
 |Control code    |Description                                               |
 |:---------------|:---------------------------------------------------------|
+|^G              |Bell                                                      |
 |^H or backspace |Cursor left / backspace                                   |
 |^I or TAB       |Tabulator                                                 |
 |^J              |Line feed i.e. cursor down + scrolling if needed          |
@@ -82,9 +91,10 @@ ADM-3a control codes:
 VT-52 control codes:
 |Control code    |Description                                               |
 |:---------------|:---------------------------------------------------------|
+|^G              |Bell                                                      |
 |^H or backspace |Cursor left / backspace                                   |
 |^I or TAB       |Tabulator                                                 |
-|^J		 |Line feed i.e. cursor down + scrolling if needed          |
+|^J		           |Line feed i.e. cursor down + scrolling if needed          |
 |^K              |Cursor up / vertical tab                                  |
 |^L              |Cursor right / form feed                                  |
 |^M              |Carriage return                                           |
@@ -99,18 +109,81 @@ VT-52 control codes:
 |ESC K           |Erase to end of line                                      |
 |ESC Y col row   |Cursor position, add $20 to col and row                   |
 
-# Restrictions
+# HW Restrictions
 
 Amiga HW restrictions:
 - Only 1-2 floppy disk drives are supported.
 - Only 68000 and 68010 processors are supported. Other Motorola 68k family processors
 may work, but not tested.
 - Hard disks are not supported.
-
-BIOS restrictions:
-- I/O byte is not supported. For example Kermit does not work.
-- Serial port is not supported.
 - Parallel port is not supported.
+
+# BIOS Functions
+
+Standard BIOS functions are documented in System Guide:
+https://github.com/juollila/cpm68k-amiga/blob/main/cpm/doc/CPM-68K_System_Guide_Jan83.pdf
+
+SturmBIOS does not support following standard BIOS functions:
+- List Character Output
+- Return List Status
+- Get I/O Byte
+- Set I/O Byte
+
+The missing List device support means that parallel port is not supported. The missing I/O byte support means that for example Kermit does not work.
+
+# XBIOS Functions
+
+SturmBIOS supports some non standard eXtended BIOS (XBIOS) functions.
+
+<table>
+  <tr>
+    <th>Function Number:</th>
+    <th>Function Name:</th>
+    <th>Description:</th>
+  </tr>
+  <tr>
+    <td>
+      <b>100</b>
+    </td>
+    <td>
+      <b>GET SERIAL PARAMETERS</b>
+    </td>
+    <td>
+      <b>Entry Parameters:</b><br>
+      Register D0.W: $64<br>
+      <br>
+      <b>Returned Values:</b><br>
+      Register D0.W: Baud Rate (300, 1200, 2400, 4800, 9600, 14400, 19200, 38400, or 57600)<br>
+      Register D1.W: Data Bits (8)<br>
+      Register D2.W: Parity (0=None)<br>
+      Register D3.W: Stop Bits (1)<br>
+      <br>
+      Get Serial Parameters Function fetches baud rate, a number of data bits, parity, a number of stop bits for the serial port.
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <b>101</b>
+    </td>
+    <td>
+      <b>SET SERIAL PARAMETERS</b>
+    </td>
+    <td>
+      <b>Entry Parameters:</b><br>
+      Register D0.W: $65<br>
+      Register D1.W: Baud Rate (300, 1200, 2400, 4800, 9600, 14400, 19200, 38400, or 57600)<br>
+      Register D2.W: Data Bits (8)<br>
+      Register D3.W: Parity (0=None)<br>
+      Register D4.W: Stop Bits (1)<br>
+      <br>
+      <b>Returned Values:</b><br>
+      Register D0.W: $0000=configuration was successful<br>
+      Register D0.W: $ffff=configuration failed<br>
+      <br>
+      Set Serial Parameters Function configures baud rate, a number of data bits, parity, a number of stop bits for the serial port. Baud rate 9600, 8 data bits, no parity and 1 stop bit are defaults which are taken into use during the SturmBIOS start-up. Baud rate 19200 is the reliable maximum for Amiga 500.
+    </td>
+  </tr>
+</table>
 
 # Boot Process
 
@@ -130,7 +203,7 @@ CP/M-68K's boot process is the following:
 
 ## Requirements
 
-The following SW is required to compile Amiga BIOS for CP/M-68k and create a  bootable
+The following SW is required to compile SturmBIOS for CP/M-68k and create a  bootable
 disk image:
 1. Cpmtools, http://www.moria.de/~michael/cpmtools/
 2. Vassm68k_mot, http://sun.hasenbraten.de/vasm/
@@ -184,9 +257,9 @@ sdobjcopy utility.
 $ sdobjcopy --input-target srec --output-target binary cpm60000.SR cpm60000.bin
 ```
 
-## Compiling BIOS
+## Compiling SturmBIOS
 
-Amiga BIOS for CP/M-68k can be compiled using the following command.
+SturmBIOS for CP/M-68k can be compiled using the following command.
 
 ```
 $ vasmm68k_mot bios.asm -Fbin -o bios.bin
