@@ -221,11 +221,20 @@ initkeyboard:
 	rts	
 
 initserial:
-	move.w	#9600,d1		; set serial default parameters
-	move.w	#8,d2
-	move.w	#0,d3
-	move.w	#1,d4
-	bsr	setserialparams
+	move.w	#9600,d1		; baud rate 9600
+	move.w	#8,d2			; 8 data bits
+	move.w	#0,d3			; no parity
+	move.w	#1,d4			; 1 stop bit
+	bsr	setbaudrate
+	move.w	#1,d1			; RTS/CTS flow control enabled
+	bsr	setflowcontrol
+	move.b	DDRA(a1),d0		; read port A data direction register in CIAB
+	or.b	#$40,d0			; /RTS is output in CIAB port A
+	and.b	#$ef,d0			; /CTS is input in CIAB port A
+	move.b	d0,DDRA(a1)		; write port A data direction register in CIAB
+	move.b	PRA(a1),d0		; read CIAB port A
+	and.b	#$bf,d0			; set RTS low
+	move.b	d0,PRA(a1)		; write CIAB port A
 	move.w	#$8001,CUSTOM+INTREQ	; set TBE interrupt flag
 	move.w	#0,serial_read_index
 	move.w	#0,serial_write_index
@@ -247,35 +256,19 @@ initfloppy:
 	rts
 
 inittrap:
-	move.l	#traphandler,$8c	; set up trap #3 handler
+	move.l	#biostraphandler,$8c	; set up BIOS trap #3 handler
+	move.l	#xbiostraphandler,$90	; set up XBIOS trap #4 handler
 	rts
 
-traphandler:
-	cmp.w	#100,d0			; check if xbios function
-	bcs	.biosfunction
-	cmp.w	#(100+XBIOS_FUNCTIONS),d0
-	bcc	.exit
-	sub.w	#100,d0
-	lsl	#2,d0			; multiply by 4
-	lea	xbiosbase,a0
-	move.l	(a0,d0.w),a0
-	bra	.callfunction
-.biosfunction:
+biostraphandler:
 	cmp.w	#BIOS_FUNCTIONS,d0
 	bcc	.exit
 	lsl	#2,d0			; multiply by 4
 	lea	biosbase,a0
 	move.l	(a0,d0.w),a0
-.callfunction:
 	jsr	(a0)
 .exit:
 	rte
-
-XBIOS_FUNCTIONS	= 2
-
-xbiosbase:
-	dc.l	getserialparams
-	dc.l	setserialparams
 
 BIOS_FUNCTIONS	= 23
 
@@ -303,6 +296,26 @@ biosbase:
 	dc.l	notimplemented ;setiob
 	dc.l	flush
 	dc.l	setexception
+
+xbiostraphandler:
+	cmp.w	#XBIOS_FUNCTIONS,d0
+	bcc	.exit
+	lsl	#2,d0			; multiply by 4
+	lea	xbiosbase,a0
+	move.l	(a0,d0.w),a0
+	jsr	(a0)
+.exit:
+	rte
+
+XBIOS_FUNCTIONS	= 5
+
+xbiosbase:
+	dc.l	notimplemented		; reserved for XBIOS init
+	dc.l	getbaudrate
+	dc.l	setbaudrate
+	dc.l	getflowcontrol
+	dc.l	setflowcontrol
+
 
 waitblit:
 	tst.w	CUSTOM+DMACONR
@@ -978,6 +991,10 @@ auxout:
 	bsr	auxoutstatus
 	cmp.w	#0,d0
 	beq	auxout
+	move.w	serial_flow_control,d0
+	cmp.w	#1,d0
+	beq	.flowcontrol
+.continue
 	move.w	#1,CUSTOM+INTREQ	; clear TBE interrupt flag
 	move.w	d1,d0
 	and.w	#$ff,d0
@@ -985,7 +1002,11 @@ auxout:
 	move.w	d0,CUSTOM+SERDAT	; send byte
 	move.w	d1,d0			; return value
 	rts
-
+.flowcontrol:
+	move.b	CIAB+PRA,d0		; read CIAB port A
+	and.b	#$10,d0			; check /CTS
+	bne	.flowcontrol
+	bra	.continue
 
 ;
 ; Function 5: Auxiliary input
@@ -1041,10 +1062,14 @@ auxinstatus:
 ; Entry parameters:
 ;	d0.b: byte to serial buffer/FIFO
 write_serial_buffer:
-	movem.l d1-d2/a0,-(sp)
+	movem.l d1-d3/a0,-(sp)
 	lea	serial_buffer,a0
 	move.w	serial_read_index,d1
 	move.w	serial_write_index,d2
+	move.w	serial_flow_control,d3
+	cmp.w	#1,d3
+	beq	.flowcontrol
+.continue:
 	addq.w	#1,d2			; next write index
 	and.w	#$ff,d2
 	cmp.w	d1,d2			; check if full queue
@@ -1052,8 +1077,19 @@ write_serial_buffer:
 	move.b	d0,(a0,d2.w)
 	move.w	d2,serial_write_index
 .exit:
-	movem.l	(sp)+,d1-d2/a0
+	movem.l	(sp)+,d1-d3/a0
 	rts	
+.flowcontrol:
+	move.w	d2,d3
+	sub.w	d1,d3			; diff = serial_write_index - serial_read_index
+	and.w	#$ff,d3
+	cmp.w	#$e0,d3			; if diff >= $e0 then set /RTS high, otherwise .continue
+	bcs	.continue
+	move.b	CIAB+PRA,d3		; read CIAB port A
+	or.b	#$40,d3			; set RTS high
+	move.b	d3,CIAB+PRA
+	bra	.continue
+	
 
 ; Read byte from serial buffer/FIFO
 ;
@@ -1061,16 +1097,31 @@ write_serial_buffer:
 ; Return value:
 ;	d0.w: byte from serial buffer/FIFO
 read_serial_buffer:
-	movem.l d1/a0,-(sp)
+	movem.l d1-d3/a0,-(sp)
 	lea	serial_buffer,a0
 	move.w	serial_read_index,d1
-	move.b	(a0,d1.w),d0
-	and.w	#$ff,d0
+	move.w	serial_write_index,d2
+	move.w	serial_flow_control,d3
+	cmp.w	#1,d3
+	beq	.flowcontrol
+.continue
 	addq.w	#1,d1
 	and.w	#$ff,d1
+	move.b	(a0,d1.w),d0
+	and.w	#$ff,d0
 	move.w	d1,serial_read_index
-	movem.l	(sp)+,d1/a0
+	movem.l	(sp)+,d1-d3/a0
 	rts
+.flowcontrol:
+	move.w	d2,d3
+	sub.w	d1,d3			; diff = serial_write_index - serial_read_index
+	and.w	#$ff,d3
+	cmp.w	#$c0,d3			; if diff < $c0 then set /RTS low, otherwise .continue
+	bcc	.continue
+	move.b	CIAB+PRA,d3		; read CIAB port A
+	and.b	#$bf,d3			; set RTS low
+	move.b	d3,CIAB+PRA
+	bra	.continue
 
 ; Serial receive buffer full interrupt
 serial_rbf_int:
@@ -1298,11 +1349,18 @@ flush:
 ; Return value:
 ;	d0.l: Previous vector contents
 setexception:
+	cmp.w	#$24,d1		; this kludge prevents that bdos does not overwrite XBIOS trap #4
+				; at first check the exception vector number
+	bne	.setexception1
+	cmp.l	#$64a48,d2	; after that check also address for the trap #4
+	beq	.exit
+.setexception1:
 	and.l	#$ff,d1		; exception should be between 0-255
 	lsl.l	#2,d1		; multiply by 4
 	move.l	d1,a0
 	move.l	(a0),d0		; return old vector value
 	move.l	d2,(a0)		; insert new vector
+.exit:
 	rts
 
 ;
@@ -2056,28 +2114,28 @@ fd_encode_track:
 ; XBIOS functions
 ;
 
-; Get serial port parameters
-; Entry params: d0.w: $66
+; Get baud rate and other serial port parameters
+; Entry params: d0.w: $1
 ; Returns: d0.w: Baud Rate (300, 1200, 2400, 4800, 9600, 14400, 19200, 38400, or 57600)
 ;          d1.w: Data Bits (8)
 ;          d2.w: Parity (0=None)
 ;          d3.w: Stop Bits (1)
-getserialparams:
+getbaudrate:
 	move.w	serial_baud_rate,d0
 	move.w	serial_data_bits,d1
 	move.w	serial_parity,d2
 	move.w	serial_stop_bits,d3
 	rts
 
-; Set serial port parameters
-; Entry params: d0.w: $65
+; Set baud rate and other serial port parameters
+; Entry params: d0.w: $2
 ;               d1.w: Baud Rate (300, 1200, 2400, 4800, 9600, 14400, 19200, 38400, or 57600)
 ;               d2.w: Data Bits (8)
 ;               d3.w: Parity (0=None)
 ;               d4.w: Stop Bits (1)
 ; Returns: d0.w: $0000 (configuration was successful)
 ;          d0.w: $ffff (configuration failed)
-setserialparams:
+setbaudrate:
 	cmp.w	#0,d1			; check if divide by zero
 	beq	.error
 	move.w	d1,serial_baud_rate
@@ -2099,6 +2157,33 @@ setserialparams:
 .error:
 	move.w	#$ffff,d0
 	rts
+
+; Get flow control for the serial port
+; Entry params: d0.w: $3
+; Returns: d0.w: RTS/CTS (0=No, 1=Yes)
+getflowcontrol:
+	move.w	serial_flow_control,d0
+	rts
+
+
+; Set flow control for the serial port
+; Entry params: d0.w: $4
+;               d1.w: RTS/CTS (0=No, 1=Yes)
+; Returns: d0.w: $0000 (configuration was successful)
+;          d0.w: $ffff (configuration failed)
+setflowcontrol:
+	cmp.w	#0,d1
+	beq	.continue
+	cmp.w	#1,d1
+	bne	.error
+.continue:
+	move.w	d1,serial_flow_control
+	move.w	#0,d0
+	rts
+.error:
+	move.w	#$ffff,d0
+	rts
+
 
 ;
 ; print routines
@@ -2258,6 +2343,8 @@ serial_parity:
 	dc.w	0
 serial_stop_bits:
 	dc.w	0
+serial_flow_control:
+	dc.w	0
 serial_read_index:
 	dc.w	0
 serial_write_index:
@@ -2370,7 +2457,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.51 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.52 ***",13,10
 	dc.b	"***   Coded by Juha Ollila  2021-2025   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0

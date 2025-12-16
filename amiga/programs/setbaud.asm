@@ -23,8 +23,10 @@
 
 SECTOR_SIZE		= 128
 
-XBIOS_GET_SERIAL_PARAMS	= $64
-XBIOS_SET_SERIAL_PARAMS	= $65
+XBIOS_GET_BAUD_RATE	= $1
+XBIOS_SET_BAUD_RATE	= $2
+XBIOS_GET_FLOW_CONTROL	= $3
+XBIOS_SET_FLOW_CONTROL	= $4
 
 BDOS_SYSTEM_RESET	= 0
 BDOS_CONSOLE_INPUT	= 1
@@ -54,7 +56,7 @@ TEXT_START:
 	bsr	print_configuration
 
 	; ask if settings should be changed
-	move.l	#want_str,d1
+	move.l	#change_str,d1
 	bsr	print_string
 	bsr     get_char
 	and.w	#%11011111,d0		; change to upper case
@@ -63,19 +65,34 @@ TEXT_START:
 
 	; print supported baud rates and ask baud rate selection
 	bsr	print_baud_rates
-.select
-	move.l	#select_str,d1
+.select1:
+	move.l	#select_str,d1		; select baud rate
 	bsr	print_string
 	bsr	get_char
 	move.w	d0,d2			; save selection to d2
 	sub.w	#'1',d2
 	cmp.w	#0,d2
-	bcs	.select
+	bcs	.select1
 	cmp.w	#9,d2
-	bcc	.select
+	bcc	.select1
 	bsr	print_cr
 
+.select2:
+	move.l	#change_flow_str,d1	; enable/disable rts/cts flow control
+	bsr	print_string
+	bsr	get_char
+	and.w	#%11011111,d0		; change to upper case
+	cmp.b   #'Y',d0
+	beq	.flow_enabled
+	cmp.b	#'N',d0
+	bne	.select2
+	move.w	#0,d5
+	bra	.update
+.flow_enabled:
+	move.w	#1,d5
+
 	; update configuration
+.update:
 	bsr	put_configuration
 
 	; show current configuration
@@ -86,10 +103,17 @@ TEXT_START:
 
 
 get_configuration:
-	move.w	#XBIOS_GET_SERIAL_PARAMS,d0
-	trap	#3
+	move.w	#XBIOS_GET_FLOW_CONTROL,d0
+	trap	#4
+	move.w	d0,d4			; save RTS/CTS
+	move.w	#XBIOS_GET_BAUD_RATE,d0
+	trap	#4
 	rts
 
+; set configuration to XBIOS
+; Entry parameters:
+; d2 = baud rate index
+; d5 = flow control, 1=Yes, 0=No
 put_configuration:
 	lsl	#1,d2			; multiply by 2
 	lea	baud_rates,a0
@@ -97,15 +121,24 @@ put_configuration:
 	move.w	#8,d2			; d2 = data bits (8)
 	move.w	#0,d3			; d3 = parity (none)
 	move.w	#1,d4			; d4 = stop bits (1)
-	move.w	#XBIOS_SET_SERIAL_PARAMS,d0
-	trap	#3
+	move.w	#XBIOS_SET_BAUD_RATE,d0
+	trap	#4
 	cmp.w	#0,d0
-	beq		.exit
+	bne	.error
+	move.w	d5,d1			; CTS/RTS -> d1
+	move.w	#XBIOS_SET_FLOW_CONTROL,d0
+	trap	#4
+	beq	.exit
+.error:
 	move.l	#configuration_error_str,d1
 	bsr		print_string
 .exit:
 	rts
 
+; print configuration
+; Entry parameters:
+; d0 = baud rate (int)
+; d4 = flow control
 print_configuration:
 	move.w	d0,d3			; baud rate
 	move.l	#current_str,d1
@@ -124,15 +157,25 @@ print_configuration:
 	cmp.w	(a0)+,d3		; check if baud rate matches
 	bne	.find_baud_str
 	move.l	(a1),d1
-	bra	.exit
+	bra	.parity
 .error:
 	move.l	unsupported_str,d1
-.exit:
+.parity:
 	bsr	print_string
 	bsr	print_cr
 	move.l	#parity_str,d1
 	bsr	print_string
 	move.l	#stop_str,d1
+	bsr	print_string
+	move.l	#flow_str,d1
+	bsr	print_string
+	cmp.w	#1,d4
+	bne	.printno
+	move.l	#yes_str,d1
+	bsr	print_string
+	rts
+.printno:
+	move.l	#no_str,d1
 	bsr	print_string
 	rts
 
@@ -192,9 +235,9 @@ TEXT_END:
 
 DATA_START:
 title_str:
-	dc.b "Amiga CP/M-68k Set Serial Parameters Program, Dec 2 2025$"
+	dc.b "Amiga CP/M-68k Set Serial Parameters Program, Dec 15 2025$"
 current_str:
-	dc.b 13,10,13,10,"Current settings:",13,10,"$"
+	dc.b 13,10,13,10,"Current configuration:",13,10,"$"
 data_str:
 	dc.b "Data bits:   8",13,10,"$"
 baud_str:
@@ -203,16 +246,24 @@ parity_str:
 	dc.b "Parity bit:  None",13,10,"$"
 stop_str:
 	dc.b "Stop bits:   1",13,10,"$"
-want_str:
-	dc.b 13,10,"Do you want to change baud rate? $"
+flow_str:
+	dc.b "RTS/CTS:     $"
+change_str:
+	dc.b 13,10,"Do you want to change configuration? $"
 supported_str:
 	dc.b 13,10,"Supported baud rates are:",13,10,"$"
 select_str:
 	dc.b 13,10,"Please select baud rate (1-9): $"
+change_flow_str:
+	dc.b 13,10,"Do you want RTS/CTS flow control (y/n): $"
 configuration_error_str:
 	dc.b 13,10,"Configuration failed",13,10,"$"
 cr_str:
 	dc.b 13,10,"$"
+yes_str:
+	dc.b "Yes",13,10,"$"
+no_str:
+	dc.b "No",13,10,"$"
 option_str:
 	dc.b ".) $"
 unsupported_str:

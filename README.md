@@ -133,7 +133,7 @@ The missing List device support means that parallel port is not supported. The m
 
 # XBIOS Functions
 
-SturmBIOS supports some non standard eXtended BIOS (XBIOS) functions.
+SturmBIOS supports some non standard eXtended BIOS (XBIOS) functions. User applications do not usually call XBIOS functions. When an application calls an XBIOS function, it places the function number in register D0.W, and function parameters to other registers as specified in the following table. After that it executes a `trap #4`instruction.
 
 <table>
   <tr>
@@ -141,16 +141,28 @@ SturmBIOS supports some non standard eXtended BIOS (XBIOS) functions.
     <th>Function Name:</th>
     <th>Description:</th>
   </tr>
-  <tr>
+    <tr>
     <td>
-      <b>100</b>
+      <b>0</b>
     </td>
     <td>
-      <b>GET SERIAL PARAMETERS</b>
+      <b>RESERVED</b>
+    </td>
+    <td>
+      Reserved for future use
+    </td>
+  </tr>
+
+  <tr>
+    <td>
+      <b>1</b>
+    </td>
+    <td>
+      <b>GET BAUD RATE</b>
     </td>
     <td>
       <b>Entry Parameters:</b><br>
-      Register D0.W: $64<br>
+      Register D0.W: $1<br>
       <br>
       <b>Returned Values:</b><br>
       Register D0.W: Baud Rate (300, 1200, 2400, 4800, 9600, 14400, 19200, 38400, or 57600)<br>
@@ -163,14 +175,14 @@ SturmBIOS supports some non standard eXtended BIOS (XBIOS) functions.
   </tr>
   <tr>
     <td>
-      <b>101</b>
+      <b>2</b>
     </td>
     <td>
-      <b>SET SERIAL PARAMETERS</b>
+      <b>SET BAUD RATE</b>
     </td>
     <td>
       <b>Entry Parameters:</b><br>
-      Register D0.W: $65<br>
+      Register D0.W: $2<br>
       Register D1.W: Baud Rate (300, 1200, 2400, 4800, 9600, 14400, 19200, 38400, or 57600)<br>
       Register D2.W: Data Bits (8)<br>
       Register D3.W: Parity (0=None)<br>
@@ -181,6 +193,42 @@ SturmBIOS supports some non standard eXtended BIOS (XBIOS) functions.
       Register D0.W: $ffff=configuration failed<br>
       <br>
       Set Serial Parameters Function configures baud rate, a number of data bits, parity, a number of stop bits for the serial port. Baud rate 9600, 8 data bits, no parity and 1 stop bit are defaults which are taken into use during the SturmBIOS start-up. Baud rate 19200 is the reliable maximum for Amiga 500.
+    </td>
+  </tr>
+    <tr>
+    <td>
+      <b>3</b>
+    </td>
+    <td>
+      <b>GET FLOW CONTROL</b>
+    </td>
+    <td>
+      <b>Entry Parameters:</b><br>
+      Register D0.W: $3<br>
+      <br>
+      <b>Returned Values:</b><br>
+      Register D0.W: RTS/CTS Flow Control (0=No, 1=Yes)<br>
+      <br>
+      Get RTS/CTS flow control for the serial port.
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <b>4</b>
+    </td>
+    <td>
+      <b>SET FLOW CONTROL</b>
+    </td>
+    <td>
+      <b>Entry Parameters:</b><br>
+      Register D0.W: $4<br>
+      Register D1.W: RTS/CTS Flow Control (0=No, 1=Yes)
+      <br>
+      <b>Returned Values:</b><br>
+      Register D0.W: $0000=configuration was successful<br>
+      Register D0.W: $ffff=configuration failed<br>
+      <br>
+      Set RTS/CTS flow control for the serial port. RTS/CTS flow control is enabled by default during the SturmBIOS start-up.
     </td>
   </tr>
 </table>
