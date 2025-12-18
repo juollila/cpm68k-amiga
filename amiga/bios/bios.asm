@@ -161,13 +161,14 @@ _init:
 	lea	CPMSTRING,a0
 	bsr	printstring
 	bsr	printcr
-	move.w	boot_drive,d0		; select boot drive
-	;move.w	#1,d0			; drive B:
-	move.w	d0,fd_drive
+	; resynchronize boot drive
+	move.w	boot_drive,d0
 	bsr	fd_select
 	bsr	fd_sync			; synchronize drive
 	bsr	fd_deselect		; deselect drive
+	; set stack
 	move	#$2000,sr		; probably not needed
+	; select drive
 	clr.l	d0			; log on boot drive, user 0
 	move.w	boot_drive,d0
 	rts				; return to BDOS
@@ -1372,37 +1373,111 @@ setexception:
 ; Input parameters: None
 ; Returns: Zero flag set if successful
 ;
+; The following cases are covered by the implementation.
+;
+; A.) Drive changes and cache track is dirty:
+; 1. Flush i.e. write dirty track to disk
+;    - If disk has changed -> error
+;    - If disk is write protected -> error
+;    - If writing fails for some other reason -> error
+; 2. Resync
+; 3. Read a new track
+;
+; B.) Drive changes and clean cache track:
+; 1. Resync
+; 2. Read a new track
+;
+; C.) Drive changes and no valid cache track:
+; 1. Resync
+; 2. Read a new track
+;
+; D.) Drive is same, dirty cache and disk has changed:
+; 1. Error
+; 2. Resync
+; 3. Read a new track
+;
+; E.) Drive is same, clean cache track and disk has changed:
+; 1. Resync
+; 2. Read a new track
+;
+; F.) Drive is same, no valid cache track and disk has changed:
+; 1. Resync
+; 2. Read a new track
+;
+; G.) Drive is same, cache track is dirty and track changes:
+; 1. Flush i.e. write dirty track to disk
+;    - If disk has changed -> error (D. covers this case already)
+;    - If disk is write protected -> error
+;    - If writing fails for some other reason -> error
+; 2. Read a new track
+;
+; H.) Drive is same, clean cache track, and track changes:
+; 1. Read a new track
+;
+; I.) Drive is same, no valid cache track, and track changes:
+; 1. Read a new track
+;
+; J.) Drive is same, dirty cache track, and track is same:
+; 1. Use cache
+;
+; K.) Drive is same, clean cache track, and track is same:
+; 1. Use cache
+;
+; L.) Drive is same, no valid cache track, and track is same:
+; 1. Read a new track
 
 fd_read_track:
-	move.w	cpm_drive,d0		; check if disk changed
+	; check if drive has changed
+	move.w	cpm_drive,d0
+	cmp.w	fd_drive,d0
+	beq	.samedrive
+
+	; drive has changed
+	bsr	fd_flush		; flush if needed
+	move.w	cpm_drive,d0
 	bsr	fd_select
-	bsr	fd_disk_change
-	bne	.notchanged
+	bsr	fd_sync			; resync because drive has changed
+	bra	.readtrack		; read track
 
-	move.w	d0,fd_drive
-	bsr	fd_sync			; synchronization, fd_cache_ok = 0, fd_dirty = 0
-	bne	.error
-	bsr	fd_deselect
-	bra	.readtrack2
-
-.notchanged:
-	cmp.w	#0,fd_cache_ok		; read track if cache is not ok
-	beq	.readtrack
-	move.w	fd_drive,d0		; read track if drive is different
-	cmp.w	cpm_drive,d0
-	bne	.readtrack
-	bsr	fd_get_current_track	; read track if track is different
+	; drive is same
+.samedrive:
+	bsr	fd_select
+	bsr	fd_disk_change		; check if disk changed
+	bne	.disknotchanged
+	; disk has changed
+	cmp.w	#0,fd_dirty		; check if cache dirty
+	beq	.notdirty
+	lea	cache_disk_changed_error_str,a0
+	bsr	printstring		; cannot write cache track because disk has changed
+.notdirty:
+	bsr	fd_sync			; resync because disk changed
+	bra	.readtrack		; read track
+	; disk has not changed
+.disknotchanged:
+	bsr	fd_get_current_track	; check if track is same
 	cmp.w	cpm_track,d0
-	bne	.readtrack
-	bra	.cacheok
-.readtrack:
+	beq	.sametrack
+	; different track
+	bsr	fd_flush		; flush if needed
+	move.w	cpm_drive,d0
+	bra	.readtrack
+	; same track
+.sametrack:
+	cmp.w	#1,fd_cache_ok		; check if cache ok
+	beq	.usecache		; use cache if cache is OK
+	bra	.readtrack		; read track if cache is not OK
+
+
+	; use cache
+.usecache:
 	bsr	fd_deselect
-	bsr	fd_flush
-	bne	.error			; branch if error
-.readtrack2:
+	clr.w	d0
+	rts
+
+	; read track
+.readtrack:
 	move.w	#0,fd_cache_ok		; invalidate cache
 	move.w	cpm_drive,d0
-	move.w	d0,fd_drive
 	bsr	fd_select
 	move.w	cpm_track,d0
 	bsr	fd_seek			; seek track
@@ -1411,14 +1486,12 @@ fd_read_track:
 	bne	.error			; branch if error
 	bsr	fd_decode_track
 	bne	.error			; branch if not successful
-
 	move.w	#1,fd_cache_ok		; cache is ok
-.cacheok:
 	bsr	fd_deselect
 	clr.w	d0
 	rts
 .error:
-	bsr	fd_deselect
+	bsr	fd_deselect		; fd_rw_track and fd_decode_track printed error message already
 	move.b	#1,d0
 	rts
 
@@ -1433,19 +1506,27 @@ fd_flush:
 	move.w	d0,fd_drive
 	bsr	fd_select
 	bsr	fd_disk_change			; check if disk changed
-	beq	.error
+	beq	.diskchangederror
 	move.w	fd_dirty_track,d0
 	bsr	fd_seek
 	bsr	fd_encode_track
 	move.w	#$4000,d0			; write
 	bsr	fd_rw_track
-	bne	.error
+	bne	.cachewriteerror
 	bsr	fd_deselect
 	move.w	#0,fd_dirty
 .exit:
 	rts
 .writeprotected:
-	lea	write_protected_str,a0
+	lea	cache_write_protected_str,a0
+	bsr	printstring
+	bra	.error
+.diskchangederror:
+	lea	cache_disk_changed_error_str,a0
+	bsr	printstring
+	bra	.error
+.cachewriteerror:
+	lea	cache_write_error_str,a0
 	bsr	printstring
 .error:
 	bsr	fd_deselect
@@ -1462,6 +1543,7 @@ fd_flush:
 ; Return value: None
 ;
 fd_select:
+	move.w	d0,fd_drive
 	and.b	#$7f,CIAB+PRB	; motor on
 	move.b	#$f7,d1		; select drive
 	rol.b	d0,d1
@@ -1680,7 +1762,7 @@ fd_seek:
 ; Entry parameters: None
 ; Return value: zero flag set if successful
 fd_wait_motor:
-	move.w	#500,d0			; 500 milliseconds timeout
+	move.w	#1000,d0		; 1000 milliseconds timeout
 	bsr	starttimer
 .wait:	btst.b	#5,CIAA+PRA
 	beq	.exit 
@@ -2457,7 +2539,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.52 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.53 ***",13,10
 	dc.b	"***   Coded by Juha Ollila  2021-2025   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
@@ -2475,6 +2557,12 @@ no_track_zero_str:
 	dc.b	13,10,"BIOS Error: Cannot find track zero",13,10,0
 write_protected_str:
 	dc.b	13,10,"BIOS Error: Disk write protected",13,10,0
+cache_write_protected_str:
+	dc.b	13,10,"BIOS Error: Cannot write track cache - Disk write protected",13,10,0
+cache_disk_changed_error_str:
+	dc.b	13,10,"BIOS Error: Cannot write track cache - Disk changed",13,10,0
+cache_write_error_str:
+	dc.b	13,10,"BIOS Error: Cannot wirte track cache",13,10,0
 no_flush_str:
 	dc.b	13,10,"BIOS Error: Cannot flush",13,10,0
 not_implemented_str:
