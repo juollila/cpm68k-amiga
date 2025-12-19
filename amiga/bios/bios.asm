@@ -308,7 +308,7 @@ xbiostraphandler:
 .exit:
 	rte
 
-XBIOS_FUNCTIONS	= 5
+XBIOS_FUNCTIONS	= 6
 
 xbiosbase:
 	dc.l	notimplemented		; reserved for XBIOS init
@@ -316,6 +316,7 @@ xbiosbase:
 	dc.l	setbaudrate
 	dc.l	getflowcontrol
 	dc.l	setflowcontrol
+	dc.l	format
 
 
 waitblit:
@@ -2266,6 +2267,68 @@ setflowcontrol:
 	move.w	#$ffff,d0
 	rts
 
+; Format disk
+; Entry params: d0.w: $5
+;               d1.w: Drive (0=A, 1=B)
+; Returns: d0.w: $0000 (operation was successful)
+;          d0.w: $ffff (operation failed)
+format:
+	cmp.w	#DRIVES,d1
+	bcc	.error
+	bsr	fd_flush		; flush because low level routines are used instead of BIOS API
+	move.w	d1,cpm_drive
+	move.w	d1,d0
+	bsr	fd_select
+	bsr	fd_sync			; clears also fd_cache_ok
+	bsr	fd_write_protection	; check write protection
+	beq	.writeprotected
+
+	; write tracks
+	move.w	#0,cpm_track
+.loop:
+	move.w	cpm_track,d0
+	cmp.w	#8,d0			; dir entries are in track 8
+	beq	.initdirtrack
+	move.l	#0,d0
+	bsr	.initsectordata
+	bra	.writetrack
+.initdirtrack:
+	move.l  #$e5e5e5e5,d0
+	bsr	.initsectordata
+.writetrack:
+	move.w	cpm_track,d0
+	bsr	fd_seek
+	bsr	fd_encode_track
+	move.w	#$4000,d0		; write
+	bsr	fd_rw_track
+	bne	.error			; fd_rw_track prints already error
+	move.w	cpm_track,d0
+	addq.w	#1,d0
+	move.w	d0,cpm_track
+	cmp.w	#TRACKS,d0
+	bne	.loop
+
+	bsr	fd_deselect
+	move.w	#0,d0
+	rts
+
+.writeprotected:
+	lea	write_protected_str,a0
+	bsr	printstring
+.error:
+	bsr	fd_deselect
+	move.w	#$ffff,d0
+	rts
+
+.initsectordata:
+	move.w	#((TRACKSIZE/4)-1),d1
+	lea	sector_data,a0
+.initloop:
+	move.l	d0,(a0)+
+	dbf	d1,.initloop
+	rts
+
+
 
 ;
 ; print routines
@@ -2539,7 +2602,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.53 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.54 ***",13,10
 	dc.b	"***   Coded by Juha Ollila  2021-2025   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
@@ -2562,7 +2625,7 @@ cache_write_protected_str:
 cache_disk_changed_error_str:
 	dc.b	13,10,"BIOS Error: Cannot write track cache - Disk changed",13,10,0
 cache_write_error_str:
-	dc.b	13,10,"BIOS Error: Cannot wirte track cache",13,10,0
+	dc.b	13,10,"BIOS Error: Cannot write track cache",13,10,0
 no_flush_str:
 	dc.b	13,10,"BIOS Error: Cannot flush",13,10,0
 not_implemented_str:

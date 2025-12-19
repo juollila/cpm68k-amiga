@@ -231,6 +231,25 @@ SturmBIOS supports some non standard eXtended BIOS (XBIOS) functions. User appli
       Set RTS/CTS flow control for the serial port. RTS/CTS flow control is enabled by default during the SturmBIOS start-up.
     </td>
   </tr>
+    <tr>
+    <td>
+      <b>5</b>
+    </td>
+    <td>
+      <b>FORMAT</b>
+    </td>
+    <td>
+      <b>Entry Parameters:</b><br>
+      Register D0.W: $5<br>
+      Register D1.W: Drive (0=A, 1=B)
+      <br>
+      <b>Returned Values:</b><br>
+      Register D0.W: $0000=operation was successful<br>
+      Register D0.W: $ffff=operation failed<br>
+      <br>
+      Format a disk in disk drive. This function does not install reserved tracks.
+    </td>
+  </tr>
 </table>
 
 # Boot Process

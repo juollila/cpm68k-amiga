@@ -27,6 +27,8 @@ BOOT_TRACKS         = 8     ; Number of boot tracks.
                             ; Boot tracks contain boot loader, CCP, BDOS and BIOS 
 ALL_TRACKS          = 160   ; Number of all tracks
 
+XBIOS_FORMAT        = 5
+
 BIOS_SELECT_DRIVE   = 9
 BIOS_SET_TRACK      = $a
 BIOS_SET_SECTOR     = $b
@@ -83,12 +85,8 @@ TEXT_START:
     cmp.b   #'Y',d0
     bne     .ask_another
 
-; select disk drive
-    move.w  d3,d1
-    sub.w   #'A',d1
-    jsr     set_current_drive
-    cmp.l   #0,d0
-    beq     .no_drive
+; calcualte disk drive id
+    sub.w   #'A',d3
 
 ; format disk
     jsr     format_disk
@@ -206,8 +204,6 @@ write_boot_tracks:
     addq.w  #1,d4
     cmp.w   #SECTORS_PER_TRACK,d4
     bne     .continue
-    move.w  #'.',d1
-    jsr     put_char
     move.w  #0,d4
     addq.w  #1,d3
     cmp.w   #BOOT_TRACKS,d3
@@ -245,62 +241,20 @@ set_track_sector_and_dma:
     trap    #3
     rts
 
-; init sector data
-; d0.l = value to be filled
-init_sector_data:
-    move.w	#((SECTOR_SIZE/4)-1),d1
-    lea     sector_data,a0
-.loop:
-    move.l  d0,(a0)+
-    dbf     d1,.loop
-    rts
-
+; format disk
+; d3 = disk drive
 format_disk:
     move.l  #formatting_str,d1
     jsr     print_string
-    move.w  #0,d3               ; d3 = track number
-    move.w  #0,d4               ; d4 = logical sector number
-    bra     .init_sector_data   ; start fill tracks with 0
-.write_sector:
-    lea     sector_data,a3    ; a3 = dma address
-    jsr     set_track_sector_and_dma
-    move.w  #BIOS_WRITE_SECTOR,d0
-    trap    #3
+    move.w  #XBIOS_FORMAT,d0
+    move.w  d3,d1
+    trap    #4
     cmp.w   #0,d0
     bne     .error
-    addq.w  #1,d4
-    cmp.w   #SECTORS_PER_TRACK,d4
-    bne     .write_sector
-    move.w  #'.',d1
-    jsr     put_char
-    move.w  #0,d4
-    addq.w  #1,d3
-    cmp.w   #ALL_TRACKS,d3
-    beq     .done
-    cmp.w   #8,d3               ; dir entries are in track 8
-    beq     .init_dir_data
-    cmp.w   #9,d3               ; rest of tracks are filled with 0
-    beq     .init_sector_data
-    cmp.w   #67,d3              ; print cr lf after 67 tracks
-    beq     .print_cr
-    cmp.w   #146,d3             ; print cr lf after 146 tracks
-    beq     .print_cr
-    bra     .write_sector
-.init_dir_data:
-    move.l  #$e5e5e5e5,d0
-    jsr     init_sector_data
-    bra     .write_sector
-.init_sector_data:
-    move.l  #0,d0
-    jsr     init_sector_data
-    bra     .write_sector
-.print_cr
-    jsr     print_cr
-    bra     .write_sector
-.done:
     rts
+
 .error:
-    move.l  #cannot_write_str,d1
+    move.l  #cannot_format_str,d1
     jsr     print_string
     jmp     exit
     
@@ -313,7 +267,7 @@ TEXT_END:
 
 DATA_START:
 title_str:
-    dc.b    13,10,"Amiga CP/M-68k Format Program, Nov 26 2025","$"
+    dc.b    13,10,"Amiga CP/M-68k Format Program, Dec 19 2025","$"
 select_str:
     dc.b    13,10,13,10,"Please select disk drive (A or B): $"
 insert_str:
@@ -323,24 +277,25 @@ confirm_str:
 cr_lf_str:
     dc.b    13,10,"$"
 formatting_str:
-    dc.b    13,10,13,10,"Formatting: $"
+    dc.b    13,10,13,10,"Formatting",13,10,"$"
 installing_str:
-    dc.b    13,10,13,10,"Installing CP/M to disk: $"
+    dc.b    13,10,"Installing CP/M to disk",13,10,"$"
 done_str:
-    dc.b    13,10,13,10,"Disk was formatted and CP/M was installed.",13,10,"$"
+    dc.b    13,10,"Disk was formatted and CP/M was installed.",13,10,"$"
 another_str:
     dc.b    13,10,"Do you want to format another disk? $"
 cannot_read_str:
     dc.b    13,10,13,10,"Failed to read from disk",13,10,"$"
 cannot_write_str:
     dc.b    13,10,13,10,"Failed to write to disk",13,10,"$"
+cannot_format_str:
+    dc.b    13,10,13,10,"Failed to format disk",13,10,"$"
 no_drive_str:
     dc.b    13,10,13,10,"No such drive",13,10,"$"
     even
 DATA_END:
 
-sector_data:
-boot_track_data = sector_data+SECTOR_SIZE
+boot_track_data:
 
 END:
     dcb.b   SECTOR_SIZE-((END-HEADER_START)%SECTOR_SIZE)    ; padding
