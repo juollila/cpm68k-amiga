@@ -139,6 +139,12 @@ bios_start:
 boot_drive:
 	dc.w	0
 _init:
+	; there is no need to set stack pointer.
+	; stack pointer is set in ccpstart, see CP/M sources, disk2, CCPIF.S.
+	; stack size is 1k, see CP/M sources, disk2, STACK.S.
+	;
+	; there is no need to set supervisor mode in status register,
+	; because it is already set in boot_loader.asm.
 	lea	CIAA,a0
 	lea	CIAB,a1
 	lea	CUSTOM,a6
@@ -166,8 +172,6 @@ _init:
 	bsr	fd_select
 	bsr	fd_sync			; synchronize drive
 	bsr	fd_deselect		; deselect drive
-	; set stack
-	move	#$2000,sr		; probably not needed
 	; select drive
 	clr.l	d0			; log on boot drive, user 0
 	move.w	boot_drive,d0
@@ -2602,7 +2606,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.54 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.55 ***",13,10
 	dc.b	"***   Coded by Juha Ollila  2021-2025   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
