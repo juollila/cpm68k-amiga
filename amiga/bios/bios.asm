@@ -962,15 +962,15 @@ keyboard_int:
 	move.b	ICR(a1),d0		; clear interrupt in CIAA
 
 	; start keyboard ack
-	move.b	#$48,CRA(a1)		; Enable timer A, serial port output
+	move.b	#$48,CRA(a1)		; Enable timer A, SPMODE=1
 	move.b	#$71,TALO(a1)		; requirement: min 75 microseconds, but 100 microseconds used
 	move.b	#$00,TAHI(a1)		; 709379 Hz PAL * 0.000100 = 71
 .wait:	btst.b	#0,ICR(a1)		; check timer A interrupt
-	bne	.wait
-	move.b	#0,CRA(a1)		; serial port input
-
-	move.w	#$0008,CUSTOM+INTREQ	; clear CIA interrupt in Paula
+	beq	.wait
+	move.b	#0,CRA(a1)		; SPMODE=0
 	movem.l (sp)+,d0-d1/a0-a1
+	move.w	#$0008,CUSTOM+INTREQ	; clear CIA interrupt in Paula immediately before rte
+	move.w	#$0008,CUSTOM+INTREQ	; twice for 68040 compatibility
 	rte
 
 ;
@@ -1002,6 +1002,7 @@ auxout:
 	beq	.flowcontrol
 .continue
 	move.w	#1,CUSTOM+INTREQ	; clear TBE interrupt flag
+	move.w	#1,CUSTOM+INTREQ	; twice for 68040 compatibility
 	move.w	d1,d0
 	and.w	#$ff,d0
 	or.w	#$100,d0		; set stop bit
@@ -1137,6 +1138,7 @@ serial_rbf_int:
 	beq	.exit
 	move.w	CUSTOM+SERDATR,d0	; read byte from serial data
 	move.w	#$800,CUSTOM+INTREQ	; clear RBF interrupt flag
+	move.w	#$800,CUSTOM+INTREQ	; twice for 68040 compatibility
 	bsr	write_serial_buffer
 .exit:
 	move.l	(sp)+,d0
@@ -1834,6 +1836,7 @@ fd_rw_track:
 .ok2:
 	move.w	#$4000,CUSTOM+DSKLEN	; dma disable + read
 	move.w	#2,CUSTOM+INTREQ	; clear disk dma interrupt
+	move.w	#2,CUSTOM+INTREQ	; twice for 68040 compatibility
 	clr.w	d0
 	rts
 
@@ -2606,8 +2609,8 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.55 ***",13,10
-	dc.b	"***   Coded by Juha Ollila  2021-2025   ***",13,10,13,10,0
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.57 ***",13,10
+	dc.b	"***   Coded by Juha Ollila  2021-2026   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
 dma_error_str:
