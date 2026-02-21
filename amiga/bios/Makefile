@@ -11,9 +11,10 @@ boot.bin: boot_loader.asm cpm.bin
 	vasmm68k_mot boot_loader.asm -Fbin -o boot.bin
 	python3 ../tools/checksum.py --output boot-with-checksum.bin boot.bin
 
-programs: ../programs/format.asm ../programs/sertest.asm
+programs: ../programs/format.asm ../programs/sertest.asm ../programs/setmap.asm
 	vasmm68k_mot ../programs/format.asm -Fbin -o format.68k
 	vasmm68k_mot ../programs/setbaud.asm -Fbin -o setbaud.68k
+	vasmm68k_mot ../programs/setmap.asm -Fbin -o setmap.68k
 	# vasmm68k_mot ../programs/sertest.asm -Fbin -o sertest.68k
 
 adf: boot-with-checksum.bin programs
@@ -94,6 +95,7 @@ adf: boot-with-checksum.bin programs
 	# Extra programs
 	cpmcp -f amiga ../adf/cpm-boot.adf ./format.68k 0:
 	cpmcp -f amiga ../adf/cpm-boot.adf ./setbaud.68k 0:
+	cpmcp -f amiga ../adf/cpm-boot.adf ./setmap.68k 0:
 	# cpmcp -f amiga ../adf/cpm-boot.adf ./sertest.68k 0:
 
 	# Make extras disk

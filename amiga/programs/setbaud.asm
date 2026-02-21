@@ -235,7 +235,7 @@ TEXT_END:
 
 DATA_START:
 title_str:
-	dc.b "Amiga CP/M-68k Set Serial Parameters Program, Dec 15 2025$"
+	dc.b 13,10,"Amiga CP/M-68k Set Serial Parameters, Dec 15 2025$"
 current_str:
 	dc.b 13,10,13,10,"Current configuration:",13,10,"$"
 data_str:
