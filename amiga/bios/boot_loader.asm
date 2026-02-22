@@ -1,13 +1,18 @@
 ; Boot loader for SturmBIOS and CP/M-68k
 ;
 
-LOAD_ADDRESS 	= $60000
-BOOT_DRIVE	= $66002
+CPM_LOAD_ADDRESS	= $60000
+CPM_BOOT_DRIVE		= $66002
+CPM_ATTN_FLAGS		= $66004
+CPM_EXEC_VER		= $66006
 
 ; library call offsets
 SUPERSTATE	= -150
 OPENDEVICE	= -444
 DOIO		= -456
+; exec base offsets
+ATNFLGS		= $128
+LIBVERSION	= $14
 ; standard io request offsets
 IO_MESSAGE	= 0
 IO_DEVICE	= 20
@@ -89,7 +94,7 @@ notdf1:
 found:
 	move.l	a5,a1
 	; load bios + ccp + bdos
-	lea	LOAD_ADDRESS,a2
+	lea	CPM_LOAD_ADDRESS,a2
 	move.l	#cpm_end-cpm_start,IO_LENGTH(a1)
 	move.l	a2,IO_DATA(a1)
 	move.l	#cpm_start-boot_block,IO_OFFSET(a1)
@@ -105,7 +110,9 @@ found:
 	jsr	SUPERSTATE(a6)
 	
 	; start cp/m
-	move.w	d6,BOOT_DRIVE
+	move.w	d6,CPM_BOOT_DRIVE		; save boot drive for BIOS
+	move.w	ATNFLGS(a6),CPM_ATTN_FLAGS	; save processor and co-processor info for BIOS
+	move.w	LIBVERSION(a6),CPM_EXEC_VER	; save exec library version for BIOS
 	jmp	(a2)
 
 ; open trackdisk

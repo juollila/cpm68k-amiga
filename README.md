@@ -9,11 +9,9 @@ limited for the CP/M-68K, but the operating system includes for example an assem
 a C language compiler.
 
 SturmBIOS (also known as cpm68k-amiga) is an implementation of CP/M-68K BIOS for Commodore Amiga.
-It allows the usage of CP/M-68K on Amiga 500, 600, 1000 and 2000 computers.
+It allows the usage of CP/M-68K on Amiga 500, 600, 1000, 1200, 2000, 3000 and 4000 computers.
 
-Note: This project is still in "work in progress" state. There are bugs and a new version can be
-buggier than a little bit older version. Testing is done mainly with UAE so that development is
-quicker. But real HW is planned to be supported.
+Note: 68020, 68030 and 68040 CPU support was just addded. The support is still experimental. All exception frames are not supported.
 
 # Documentation
 
@@ -113,10 +111,9 @@ VT-52 control codes:
 
 Amiga HW restrictions:
 - Only 1-2 floppy disk drives are supported.
-- Only 68000 and 68010 processors are supported. Other Motorola 68k family processors
-may work, but not tested.
 - Hard disks are not supported.
 - Parallel port is not supported.
+- Only first 512k of RAM is used, but it is more than enough for CP/M-68k.
 
 # BIOS Functions
 

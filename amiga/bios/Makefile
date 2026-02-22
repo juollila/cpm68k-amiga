@@ -1,7 +1,7 @@
 all: bios.bin cpm.bin boot.bin adf
 
-bios.bin: bios.asm
-	vasmm68k_mot bios.asm -Fbin -o bios.bin
+bios.bin: bios.asm detectcpu.asm ../../cpm/system/exceptn.asm
+	vasmm68k_mot -m68020 bios.asm -Fbin -o bios.bin
 
 cpm.bin: bios.bin ../../cpm/system/cpm60000.bin
 	dd if=../../cpm/system/cpm60000.bin ibs=24k count=1 of=cpm60000-padded.bin conv=sync

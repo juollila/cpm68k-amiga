@@ -12,11 +12,9 @@
 *						*
 *************************************************
 
-
-	.globl	_initexc
-	.globl	_tpa_lp
-	.globl	_tpa_hp
-	.globl	gouser				*sw RTE routine
+M68010 = 1
+_tpa_lp = $65cfe
+_tpa_hp = $65cf8
 
 bgetseg = 18
 bsetexc	= 22
@@ -79,30 +77,28 @@ dontinit:
 	dbf	d0,init4
 	rts
 
-	.page
-exchndl:.equ	*
+exchndl:
 
-#ifndef	M68010
+	ifnd	M68010
 	bsr.w	except		*  2	Buserr
 excrtn0:
 	bsr.w	except		*  3	Addressing error
 	bsr.w	except		*  4	Illegal Instruction
-#else
-	.globl	m68010		*	Note case difference!
+	else
 m68010:				*	For build process
 	bsr.w	berr		*  2	Buserr
 excrtn0:
 	bsr.w	berr		*  3	Addressing error
 	bsr.w	except		*  4	Illegal Instruction
-#endif
+	endif
 	bsr.w	except		*  5
 	bsr.w	except		*  6
 	bsr.w	except		*  7
-#ifndef	M68010
+	ifnd	M68010
 	bsr.w	except		*  8
-#else				* Privilege violation
+	else				* Privilege violation
 	bsr.w	privviol	*  8
-#endif
+	endif
 	bsr.w	except		*  9
 	bsr.w	except		* 10
 	bsr.w	except		* 11
@@ -134,8 +130,7 @@ excrtn0:
 	bsr.w	except		* 37
 	bsr.w	except		* 38
 	bsr.w	except		* 39
-	.page
-#ifdef	M68010
+	ifd	M68010
 *
 *	Here if the exception in question was a buserr/addressing error.
 *	We reformat the stack to look like a 68000.
@@ -174,8 +169,7 @@ privviol:
 	tst.l	(sp)+				*	Pop return address
 	rte					*	Try it again
 notsr:	movem.l	(sp)+,d0/a0			*	Abandon hope, all ye ..
-	.page
-#endif
+	endif
 except:
 	clr.w	-(sp)
 	movem.l	a0/d0,-(sp)	* 10 (11) words now on stack in following order
@@ -231,11 +225,11 @@ lowexc:	move	d0,-(sp)	* save excptn nmbr
 	bsr	print		* print default exception message
 	move	(sp)+,d0
 	bsr	prtbyte
-	lea	excmsg2, a0
+	lea	excmsg2,a0
 	bsr	print
 	move.l	(sp)+,d0
 	bsr	prtlong
-	lea	excmsg3, a0
+	lea	excmsg3,a0
 	bsr	print
 	clr.l	d0
 	trap	#2		* warm boot
@@ -255,9 +249,9 @@ usrexc:
 	move.l	a0,usp		* update user stack pointer
 	movem.l	(sp)+,a0/d0	* restore regs
 	move.l	2(sp),8(sp)	* move address of user handler to excptn rtn
-#ifdef	M68010
+	ifd	M68010
 	clr.w	12(sp)		*sw Clear out the format word
-#endif
+	endif
 	addq	#6,sp		* clear junk from stack
 	andi	#$7fff,(sp)	* clear trace bit
 	rte			* go to user handler
@@ -273,14 +267,13 @@ addrexc:
 	move.l	a0,usp		* update user stack pointer
 	movem.l	(sp)+,a0/d0	* restore regs
 	move.l	2(sp),16(sp)	* move address of user handler to excptn rtn
-#ifdef	M68010
+	ifd	M68010
 	clr.w	20(sp)		*sw Clear format word
-#endif
+	endif
 	adda	#14,sp		* clear junk from stack
 	andi	#$7fff,(sp)	* clear trace bit
 	rte			* go to user handler
 
-	.page
 *******************************************************************************
 *
 *	gouser routine.  This routine performs an RTE to go to the user program
@@ -288,22 +281,21 @@ addrexc:
 *
 *******************************************************************************
 gouser:
-#ifdef	M68010
+	ifd	M68010
 	clr.w	-(sp)			*	Push format word
-#endif
+	endif
 	move.l	a0,-(sp)		*	Push epa
 	clr.w	-(sp)			*		  and SR
 	rte				*	Do it.  Into user program.
-.page
 *
 *  Subroutines
 *
 
 print:
 	clr.l	d1
-	move.b	(a0)+, d1
+	move.b	(a0)+,d1
 	beq	prtdone
-	move	#2, d0
+	move	#2,d0
 	trap	#2
 	bra	print
 prtdone:
@@ -343,19 +335,17 @@ lt10:
 	rts
 
 
-	.data
 
 excmsg1:
-	.dc.b	13,10,10,'Exception $',0
+	dc.b	13,10,10,"Exception $",0
 
 excmsg2:
-	.dc.b	' at user address $',0
+	dc.b	" at user address $",0
 
 excmsg3:
-	.dc.b	'.  Aborted.',0
+	dc.b	".  Aborted.",0
 
 
-	.bss
 
 evec_adr:
-	.ds.l	1
+	ds.l	1

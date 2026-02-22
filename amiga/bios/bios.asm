@@ -138,6 +138,10 @@ bios_start:
 	bra _init
 boot_drive:
 	dc.w	0
+attn_flags:
+	dc.w	0
+exec_ver:
+	dc.w	0
 _init:
 	; there is no need to set stack pointer.
 	; stack pointer is set in ccpstart, see CP/M sources, disk2, CCPIF.S.
@@ -162,6 +166,20 @@ _init:
 	; print bios string
 	lea	bios_str(pc),a0
 	bsr	printstring
+	; detect cpu
+	move.w	attn_flags,d0
+	move.w	exec_ver,d1
+	bsr	detectcpu
+	move.l	d0,detected_cpu
+	lea	cpu_detected_str,a0
+	bsr	printstring
+	bsr	printcpu
+	bsr	printcr
+	; disable cache if 68020+
+	bsr	disablecaches
+	; install patch if 68010+
+	bsr	installpatch
+	bsr	printcr
 	; print cp/m string
 	; we do not utilize cp/m loader thus cp/m string should be printed separately 
 	lea	CPMSTRING,a0
@@ -1244,7 +1262,6 @@ readsector:
 	add.l	d0,a0
 
 	move.l	cpm_dma,a1		; destination address
-	
 	move.w	#0,d1			; copy cp/m sector to "dma buffer"
 .copy:	
 	move.l	(a0)+,(a1)+
@@ -1359,8 +1376,6 @@ flush:
 setexception:
 	cmp.w	#$24,d1		; this kludge prevents that bdos does not overwrite XBIOS trap #4
 				; at first check the exception vector number
-	bne	.setexception1
-	cmp.l	#$64a48,d2	; after that check also address for the trap #4
 	beq	.exit
 .setexception1:
 	and.l	#$ff,d1		; exception should be between 0-255
@@ -1760,7 +1775,11 @@ fd_seek:
 .add:	addq.w	#2,d0
 .store:	move.w	d0,FD_TRACK(a0)	
 	bra	.loop
-.exit:	clr.w	d0			; set zero flag
+.exit:
+.delay15ms:
+	move.w	#15,d0
+	bsr	delay
+	clr.w	d0
 	movem.l	(sp)+,d2-d3
 	rts
 
@@ -1953,7 +1972,8 @@ fd_decode_track:
 	bne	.badsectorheader
 	move.l	d4,d5				; check sector number (should be 0-10)
 	lsr.w	#8,d5
-	and.w	#$ff,d5
+	and.l	#$ff,d5				; bug fix: and.l should be used instead of and.w
+						; so that decoding works on 68020/68030/68040
 	cmp.w	#11,d5
 	bcc	.badsectorheader
 	cmp.w	#0,d5
@@ -2014,7 +2034,6 @@ fd_decode_track:
 	cmp.l	#(mfm_track+MFM_TRACKSIZE),a0	; is current position >= mfm track address + mfm track size
 	bcc	.toofewsectors
 	bra	.skip
-
 .badsectorheader:
 	lea	bad_sector_header_str,a0
 	bsr	printstring
@@ -2335,11 +2354,76 @@ format:
 	dbf	d1,.initloop
 	rts
 
+;
+; detect CPU
+;
+detectcpu:
+	include "detectcpu.asm"
 
+;
+; disable instruction and data cache if needed
+;
+disablecaches:
+	cmp.l	#0,detected_cpu
+	beq	.exit
+	cmp.l	#68000,detected_cpu
+	beq	.exit
+	cmp.l	#68010,detected_cpu
+	beq	.exit
+	moveq	#0,d0
+	movec	d0,cacr
+	lea	cache_disabled_str,a0
+	bsr	printstring
+.exit:
+	rts
+
+;
+; install patch for 68010 + processors
+;
+orig_initexc = $6495e
+orig_gouser = $64b78
+installpatch:
+	cmp.l	#0,detected_cpu
+	beq	.exit
+	cmp.l	#68000,detected_cpu
+	beq	.exit
+	; patch _initexc to jump to 68010 version of _initexc
+	move.w	#$4ef9,orig_initexc		; jmp command
+	move.l	#_initexc,orig_initexc+2	; address of 68010 version of _initexc
+	; patch original gouser to jump to 68010 version of gouser
+	move.w	#$4ef9,orig_gouser		; jmp command
+	move.l	#gouser,orig_gouser+2		; address of 68010 version of gouser
+	lea	patch_installed_str,a0
+	bsr	printstring
+.exit
+	rts
+patch:
+	include "../../cpm/system/exceptn.asm"
 
 ;
 ; print routines
 ;
+
+; print cpu
+;
+; d0 = cpu as a long word
+printcpu:
+	movem.l	d0-d1/a0-a1,-(sp)
+	lea	cpu_table,a0
+	lea	cpu_str_table,a1
+.loop:
+	move.l	(a0)+,d1
+	cmp.l	d0,d1
+	beq	.print1
+	cmp.l	#0,d1
+	beq	.print1
+	addq	#4,a1
+	bra	.loop
+.print1:
+	move.l	(a1),a0
+	bsr	printstring
+	movem.l	(sp)+,d0-d1/a0-a1
+	rts
 
 ; print string
 ;
@@ -2461,7 +2545,6 @@ delay:
 	move.b	#$7f,CIAB+ICR		; disable all interrupts in CIAB
 	rts
 
-
 ;
 ; data
 ;
@@ -2503,6 +2586,10 @@ serial_write_index:
 	dc.w	0
 serial_buffer:
 	blk.b	256,0
+
+; detected cpu
+detected_cpu:
+	dc.l	0
 
 ; floppy variables
 fd_write:
@@ -2609,7 +2696,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.57 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.58 ***",13,10
 	dc.b	"***   Coded by Juha Ollila  2021-2026   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
@@ -2637,6 +2724,35 @@ no_flush_str:
 	dc.b	13,10,"BIOS Error: Cannot flush",13,10,0
 not_implemented_str:
 	dc.b	" BIOS Error: Not implemented",13,10,0
+cpu_detected_str:
+	dc.b	"CPU detected: ",0
+cache_disabled_str:
+	dc.b	"CPU cache was disabled",13,10,0
+patch_installed_str:
+	dc.b	"68010+ patch was installed for CP/M",13,10,0
+	even
+
+cpu_table:
+	dc.l	68000
+	dc.l	68010
+	dc.l	68020
+	dc.l	68030
+	dc.l	68040
+	dc.l	0
+cpu_str_table:
+	dc.l cpu68000_str
+	dc.l cpu68010_str
+	dc.l cpu68020_str
+	dc.l cpu68030_str
+	dc.l cpu68040_str
+	dc.l cpunone_str
+
+cpu68000_str: dc.b "68000",0
+cpu68010_str: dc.b "68010",0
+cpu68020_str: dc.b "68020",0
+cpu68030_str: dc.b "68030",0
+cpu68040_str: dc.b "68040",0
+cpunone_str:  dc.b "unknown",0
 	even
 
 ; keymap (raw code to ascii)
