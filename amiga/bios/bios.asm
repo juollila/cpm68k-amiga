@@ -330,7 +330,7 @@ xbiostraphandler:
 .exit:
 	rte
 
-XBIOS_FUNCTIONS	= 6
+XBIOS_FUNCTIONS	= 9
 
 xbiosbase:
 	dc.l	notimplemented		; reserved for XBIOS init
@@ -339,6 +339,9 @@ xbiosbase:
 	dc.l	getflowcontrol
 	dc.l	setflowcontrol
 	dc.l	format
+	dc.l	notimplemented		; read track
+	dc.l	notimplemented		; write track
+	dc.l	setkeymap
 
 
 waitblit:
@@ -927,7 +930,7 @@ keyboard_int:
 	and.l	#$7f,d0
 	cmp.b	#$60,d0
 	bcc	.specialkey
-	lea	keymap_us,a0
+	lea	keymap,a0
 	lsl.b	#1,d0
 	cmp.w	#0,ctrl_key
 	bne	.storectrl		; branch if control key
@@ -2354,6 +2357,23 @@ format:
 	dbf	d1,.initloop
 	rts
 
+; Set keymap
+; Entry params: d0.w: $8
+;               d1.w: Address of keymap table
+; Returns: d0.w: $0000 (operation was successful)
+setkeymap:
+	move.l	d1,a0
+	lea	keymap,a1
+	clr.w	d0
+.loop:
+	move.b	(a0,d0.w),(a1,d0.w)
+	addq.w	#1,d0
+	cmp.w	#192,d0
+	bne	.loop
+.exit:
+	clr.w	d0
+	rts
+
 ;
 ; detect CPU
 ;
@@ -2399,6 +2419,7 @@ installpatch:
 	rts
 patch:
 	include "../../cpm/system/exceptn.asm"
+
 
 ;
 ; print routines
@@ -2696,7 +2717,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.58 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.59 ***",13,10
 	dc.b	"***   Coded by Juha Ollila  2021-2026   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
@@ -2756,7 +2777,7 @@ cpunone_str:  dc.b "unknown",0
 	even
 
 ; keymap (raw code to ascii)
-keymap_us:
+keymap:
 	dc.b	"`~","1!","2@","3#","4$","5%","6^","7&"
 	dc.b	"8*","9(","0)","-_","=+","\|",0,0,"00"
 	dc.b	"qQ","wW","eE","rR","tT","yY","uU","iI"

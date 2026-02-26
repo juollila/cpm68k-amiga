@@ -8,8 +8,7 @@ uncommon operating system when compared to 8-bit CP/M-80 variant. Software avail
 limited for the CP/M-68K, but the operating system includes for example an assembler and
 a C language compiler.
 
-SturmBIOS (also known as cpm68k-amiga) is an implementation of CP/M-68K BIOS for Commodore Amiga.
-It allows the usage of CP/M-68K on Amiga 500, 600, 1000, 1200, 2000, 3000 and 4000 computers.
+SturmBIOS (also known as cpm68k-amiga) is an implementation of CP/M-68K BIOS for Commodore Amiga. It allows the usage of CP/M-68K on Amiga computers.
 
 Note: 68020, 68030 and 68040 CPU support was just addded. The support is still experimental. All exception frames are not supported.
 
@@ -25,6 +24,7 @@ Amiga CP/M-68k supports the following additional commands:
 |:-------------|:-------------------------------------------------|
 |format.68k    |Format disk and install CP/M to reserved tracks   |
 |setbaud.68k   |Set baud rate for the serial port                 |
+|setmap.68k    |Change keyboard layout (USA, UK, FI, SE or DE)    |
 
 
 
@@ -110,6 +110,7 @@ VT-52 control codes:
 # HW Restrictions
 
 Amiga HW restrictions:
+- Only PAL video standard supported.
 - Only 1-2 floppy disk drives are supported.
 - Hard disks are not supported.
 - Parallel port is not supported.
@@ -245,6 +246,49 @@ SturmBIOS supports some non standard eXtended BIOS (XBIOS) functions. User appli
       Register D0.W: $ffff=operation failed<br>
       <br>
       Format a disk in disk drive. This function does not install reserved tracks.
+    </td>
+  </tr>
+  </tr>
+    <tr>
+    <td>
+      <b>6</b>
+    </td>
+    <td>
+      <b>RESERVED</b>
+    </td>
+    <td>
+      Reserved for future use
+    </td>
+  </tr>
+  </tr>
+    <tr>
+    <td>
+      <b>7</b>
+    </td>
+    <td>
+      <b>RESERVED</b>
+    </td>
+    <td>
+      Reserved for future use
+    </td>
+  </tr>
+    </tr>
+    <tr>
+    <td>
+      <b>8</b>
+    </td>
+    <td>
+      <b>SET KEYMAP</b>
+    </td>
+    <td>
+      <b>Entry Parameters:</b><br>
+      Register D0.W: $8<br>
+      Register D1.L: Address of keymap table
+      <br>
+      <b>Returned Values:</b><br>
+      Register D0.W: $0000=operation was successful<br>
+      <br>
+      Set a keymap. The keymap should be in same binary format as keymap in bios.asm. The length of keymap is 192 bytes.
     </td>
   </tr>
 </table>

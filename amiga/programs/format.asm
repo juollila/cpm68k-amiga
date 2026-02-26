@@ -267,7 +267,7 @@ TEXT_END:
 
 DATA_START:
 title_str:
-    dc.b    13,10,"Amiga CP/M-68k Format Program, Dec 19 2025","$"
+    dc.b    13,10,"Amiga CP/M-68k Format, Dec 19 2025","$"
 select_str:
     dc.b    13,10,13,10,"Please select disk drive (A or B): $"
 insert_str:
