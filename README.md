@@ -113,7 +113,6 @@ Amiga HW restrictions:
 - Only PAL video standard supported.
 - Only 1-2 floppy disk drives are supported.
 - Hard disks are not supported.
-- Parallel port is not supported.
 - Only first 512k of RAM is used, but it is more than enough for CP/M-68k.
 
 # BIOS Functions
@@ -122,12 +121,10 @@ Standard BIOS functions are documented in System Guide:
 https://github.com/juollila/cpm68k-amiga/blob/main/cpm/doc/CPM-68K_System_Guide_Jan83.pdf
 
 SturmBIOS does not support following standard BIOS functions:
-- List Character Output
-- Return List Status
 - Get I/O Byte
 - Set I/O Byte
 
-The missing List device support means that parallel port is not supported. The missing I/O byte support means that for example Kermit does not work.
+The missing I/O byte support means that for example Kermit does not work.
 
 # XBIOS Functions
 
@@ -302,9 +299,10 @@ CP/M-68K's boot process is the following:
 4. Boot loader jumps to BDOS initialization routine ($60000).
 5. BDOS initialization routine calls BIOS init routine ($66000).
 6. BIOS takes over Amiga's operating system i.e. disables interrupts and DMA.
-7. BIOS initializes screen, CIA timers, keyboard interrupt, floppy and trap number #3.
-8. BIOS returns to BDOS.
-9. BDOS and CCP performs the rest of initializations.
+7. BIOS initializes screen, CIA timers, keyboard interrupt, serial port, parallel port, floppy and trap number #3 and #4.
+8. BIOS detects CPU and install a patch for CP/M if processor is 68010 or better. CPU caches are also disabled if processor is 68020 or better.
+9. BIOS returns to BDOS.
+10. BDOS and CCP performs the rest of initializations.
 
 
 # Building

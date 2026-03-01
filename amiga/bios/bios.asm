@@ -157,8 +157,9 @@ _init:
 	bsr	inittimers
 	bsr	initkeyboard
 	bsr	initserial
+	bsr	initparallel
 	bsr	initfloppy
-	bsr	inittrap
+	bsr	inittraps
 
 	; clear screen
 	move.w	#$1a,d1
@@ -265,7 +266,14 @@ initserial:
 	move.w	INTENAR(a6),d0		; read interrupt enable bits
 	or.w	#$c800,d0		; enable RBF interrupts
 	move.w	d0,INTENA(a6)
-	rts	
+	rts
+
+initparallel:
+	move.b	DDRA(a1),d0		; read port A data direction register in CIAB
+	and.b	#$f8,d0			; SEL, POUT, BUSY are inputs
+	move.b	d0,DDRA(a1)		; write port A data direction register in CIAB
+	move.b	#$ff,DDRB(a0)		; set parallel port to output in port B data direction register in CIAA
+	rts
 
 initfloppy:
 	move.b	#$03,DDRA(a0)		; audio filter & rom overlay are outputs (CIAA)
@@ -278,7 +286,7 @@ initfloppy:
 	move.w	#$8010,DMACON(a6)	; enable disk DMA
 	rts
 
-inittrap:
+inittraps:
 	move.l	#biostraphandler,$8c	; set up BIOS trap #3 handler
 	move.l	#xbiostraphandler,$90	; set up XBIOS trap #4 handler
 	rts
@@ -301,7 +309,7 @@ biosbase:
 	dc.l	constatus
 	dc.l	conin
 	dc.l	conout
-	dc.l	notimplemented ;listchar
+	dc.l	list
 	dc.l	auxout
 	dc.l	auxin
 	dc.l	home
@@ -311,7 +319,7 @@ biosbase:
 	dc.l	setdma
 	dc.l	readsector
 	dc.l	writesector
-	dc.l	notimplemented ;listst
+	dc.l	listst
 	dc.l	sectortranslate
 	dc.l	notimplemented ;
 	dc.l	getaddresstable
@@ -1002,8 +1010,16 @@ keyboard_int:
 ;	d1.w: Character
 ; Return value: None
 ;
-listchar:
-	rts				; not implemented
+list:
+	bsr	listst			; check if printer is busy or paper is out
+	cmp.w	#0,d0
+	beq	list
+	move.b	d1,CIAA+PRB		; write character to parallel port
+					; this will drive /STROBE (/DRDY) automatically low, then high
+.waitack:
+	btst.b	#4,CIAA+ICR		; wait F (ACK) interrupt i.e. Amiga has received ACK signal from the printer
+	beq	.waitack
+	rts
 
 ;
 ; Function 6: Auxiliary output
@@ -1320,7 +1336,21 @@ writesector:
 	move.w	#1,d0
 	rts
 
-; Function 15 Return list status: Not needed at first phase
+; Function 15 Return list status
+;
+; Entry parameters:
+;	d0.w: $f
+; Return value:
+;	d0.w: $00ff = device ready, $0000 = device not ready
+listst:
+	move.b	CIAB+PRA,d0
+	and.b	#$3,d0			; check POUT and BUSY
+	bne	.devicenotready
+	move.w	#$ff,d0
+	rts
+.devicenotready:
+	clr.w	d0
+	rts
 
 ; Function 16 Sector translate
 ;
@@ -1353,7 +1383,7 @@ getaddresstable:
 ; Function 19 Get I/O byte: Not needed at first phase
 ; Function 20 Set I/O byte: Not needed at first phase
 
-; Function 21 Flush buffers: Not started (dummy function)
+; Function 21 Flush buffers:
 ;
 ;	Entry parameters: d0.w: $15
 ;	Return value: d0.w: 0 if no error, $ffff if physical error
@@ -1368,7 +1398,7 @@ flush:
 	move.w	#-1,d0
 	rts
 
-; Function 22 Set exception handler address: Not started
+; Function 22 Set exception handler address:
 ;
 ; Entry parameters:
 ;	d0.w: $16
@@ -2717,7 +2747,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.59 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.61 ***",13,10
 	dc.b	"***   Coded by Juha Ollila  2021-2026   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
