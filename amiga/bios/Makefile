@@ -1,6 +1,6 @@
 all: bios.bin cpm.bin boot.bin adf
 
-bios.bin: bios.asm detectcpu.asm ../../cpm/system/exceptn.asm
+bios.bin: bios.asm detect_cpu.asm ../../cpm/system/exceptn.asm
 	vasmm68k_mot -m68020 bios.asm -Fbin -o bios.bin
 
 cpm.bin: bios.bin ../../cpm/system/cpm60000.bin
@@ -101,7 +101,11 @@ adf: boot-with-checksum.bin programs
 	# Make extras disk
 	cp ../adf/amiga-blank-dd-ffs.adf ../adf/cpm-extras.adf
 	mkfs.cpm -f amiga -b boot-with-checksum.bin ../adf/cpm-extras.adf
-	cpmcp -f amiga ../adf/cpm-extras.adf ../extras/uemacs/*.* 0:
+	cpmcp -f amiga ../adf/cpm-extras.adf ../extras/uemacs/uemacs.68k 0:
+	cpmcp -f amiga ../adf/cpm-extras.adf ../extras/uemacs/uemacs.txt 0:
+	cpmcp -f amiga ../adf/cpm-extras.adf ../extras/kermit/kermit.68k 0:
+	cpmcp -t -f amiga ../adf/cpm-extras.adf ../extras/kermit/kermit.txt 0:
+	cpmcp -f amiga ../adf/cpm-extras.adf ../extras/com/com.68k 0:
 
 	#cp ../adf/amiga-blank-dd-ffs.adf ../adf/cpm-pascal.adf
 	#mkfs.cpm -f amiga -b boot-with-checksum.bin ../adf/cpm-pascal.adf

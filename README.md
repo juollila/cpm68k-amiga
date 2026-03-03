@@ -120,11 +120,46 @@ Amiga HW restrictions:
 Standard BIOS functions are documented in System Guide:
 https://github.com/juollila/cpm68k-amiga/blob/main/cpm/doc/CPM-68K_System_Guide_Jan83.pdf
 
-SturmBIOS does not support following standard BIOS functions:
-- Get I/O Byte
-- Set I/O Byte
+# I/O Byte
 
-The missing I/O byte support means that for example Kermit does not work.
+SturmBIOS supports I/O redirection using I/O byte (BIOS functions 19 and 20).
+
+I/O byte format:
+| Device:  | LIST | AUX OUTPUT | AUX INPUT | CONSOLE |
+|:---------|:-----|:-----------|:----------|:--------|
+| Bits :   | 7,6  | 5,4        | 3,2       | 1,0     |
+
+**CONSOLE device values:**
+| Value: | Device:                                               |
+|:-------|:------------------------------------------------------|
+| 0      | Serial port (TTY:)                                    |
+| 1      | Console (CRT:)                                        |
+| 2      | Batch mode (BAT:) console as input, printer as output |
+| 3      | NULL (UC1:)                                           |
+
+**AUX INPUT device values:**
+| Value: | Device:                                               |
+|:-------|:------------------------------------------------------|
+| 0      | Serial port (TTY:)                                    |
+| 1      | Serial port (PTR:)                                    |
+| 2      | NULL (UR1:)                                           |
+| 3      | NULL (UR2:)                                           |
+
+**AUX OUTPUT device values:**
+| Value: | Device:                                               |
+|:-------|:------------------------------------------------------|
+| 0      | Serial port (TTY:)                                    |
+| 1      | Serial port (PTP:)                                    |
+| 2      | NULL (UP1:)                                           |
+| 3      | NULL (UP2:)                                           |
+
+**LIST device values:**
+| Value: | Device:                                               |
+|:-------|:------------------------------------------------------|
+| 0      | Serial port (TTY:)                                    |
+| 1      | Serial port (PTP:)                                    |
+| 2      | Parallel port / Centronics (LPT:)                     |
+| 3      | NULL (UL1:)                                           |
 
 # XBIOS Functions
 

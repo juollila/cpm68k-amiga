@@ -1,0 +1,39 @@
+1. INTRODUCTION
+
+Kermit can be used to transfer files between an Amiga CP/M-68k and
+a modern PC with MacOS, Linux, or Windows.
+
+Note: This method is only for demonstration purposes. You can normally use
+cpmcp (from cpmtools) to transfer files to/from the adf disk image.
+
+Requirements:
+- Null-modem cable
+- USB serial port adapter
+- C-Kermit on the PC
+
+2. C-KERMIT SETTINGS
+
+The following commands should be executed in C-Kermit on the PC:
+SET LINE <serial device>
+SET CARRIER-WATCH OFF
+SET SPEED 9600
+SET PARITY NONE
+SET STOP-BITS 1
+SET FLOW-CONTROL RTS/CTS 
+
+3. TRANSFERRING A FILE FROM AMIGA CP/M-68K TO PC
+
+Execute on the Amiga:
+kermit s <filename>
+
+Execute on C-Kermit on the PC:
+receive
+
+4. TRANSFERRING A FILE FROM PC to AMIGA CP/M-68K
+
+Execute on C-Kermit on the PC:
+send <filename>
+
+Execute on the Amiga:
+kermit r
+

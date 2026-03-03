@@ -128,6 +128,7 @@ put_configuration:
 	move.w	d5,d1			; CTS/RTS -> d1
 	move.w	#XBIOS_SET_FLOW_CONTROL,d0
 	trap	#4
+	cmp.w	#0,d0
 	beq	.exit
 .error:
 	move.l	#configuration_error_str,d1

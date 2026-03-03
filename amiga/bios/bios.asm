@@ -1,6 +1,6 @@
 ; CP/M-68k BIOS for Amiga
 ;
-; Copyright (c) 2021-2025 Juha Ollila
+; Copyright (c) 2021-2026 Juha Ollila
 ; 
 ; Permission is hereby granted, free of charge, to any person obtaining a copy
 ; of this software and associated documentation files (the "Software"), to deal
@@ -160,7 +160,8 @@ _init:
 	bsr	initparallel
 	bsr	initfloppy
 	bsr	inittraps
-
+	; set i/o byte
+	move.w	#$95,iobyte		; con:=crt: axi:=ptr: axo:=ptp: lst:=lpt:
 	; clear screen
 	move.w	#$1a,d1
 	bsr	conout
@@ -321,10 +322,10 @@ biosbase:
 	dc.l	writesector
 	dc.l	listst
 	dc.l	sectortranslate
-	dc.l	notimplemented ;
+	dc.l	notimplemented
 	dc.l	getaddresstable
-	dc.l	notimplemented ;segiob
-	dc.l	notimplemented ;setiob
+	dc.l	getiobyte
+	dc.l	setiobyte
 	dc.l	flush
 	dc.l	setexception
 
@@ -352,13 +353,42 @@ xbiosbase:
 	dc.l	setkeymap
 
 
+; wait blit to complete
 waitblit:
 	tst.w	CUSTOM+DMACONR
 .waitblit0:
-	btst	#14-8,CUSTOM+DMACONR	; wait blit to complete
+	btst	#14-8,CUSTOM+DMACONR
 	bne	.waitblit0
 	rts
 
+; dummy i/o functions for iobyte redirection
+dummyout1:
+	rts
+
+dummyin1:
+	move.w	#$1a,d0		; ctrl + Z i.e. end of file
+	rts
+
+dummyinstatus1:
+	move.w	#$ff,d0		; input device ready
+	rts
+
+dummyoutstatus1:
+	move.w	#$ff,d0		; output device ready
+	rts
+
+; select io routine
+; entry parameters:
+;	d0.w:	device (two bits)
+;	a0.w:	redirection table
+selectioroutine:
+	and.w	#$3,d0
+	lsl.w	#2,d0		; multiply by 4
+	move.l	(a0,d0.w),a0
+	jsr	(a0)
+	rts
+
+; not implemented error
 notimplemented:
 	bsr	printcr
 	lsr	#2,d0
@@ -377,6 +407,8 @@ warmboot:
 	bsr	flush
 	jmp	CCPSTART
 
+
+
 ;
 ; Function 2: Console status
 ;
@@ -387,6 +419,17 @@ warmboot:
 ;	d0.w: $0000 if not ready
 ;
 constatus:
+	move.w	iobyte,d0
+	lea	constatus_table(pc),a0
+	jmp	selectioroutine
+
+constatus_table:
+	dc.l	auxinstatus1	; tty
+	dc.l	constatus1	; crt
+	dc.l	constatus1	; batch mode
+	dc.l	dummyinstatus1	; uc1
+
+constatus1:
 	move.w	key_index.l,d0
 	cmp.w	#16,d0
 	bcc	.notready
@@ -395,6 +438,7 @@ constatus:
 .notready:
 	clr.l	d0
 	rts
+
 ;
 ; Function 3: Read console character
 ;
@@ -404,8 +448,19 @@ constatus:
 ;	d0.w: character
 ;
 conin:
+	move.w	iobyte,d0
+	lea	conin_table(pc),a0
+	jmp	selectioroutine
+
+conin_table:
+	dc.l	auxin1		; tty
+	dc.l	conin1		; crt
+	dc.l	conin1		; batch mode
+	dc.l	dummyin1	; uc1
+
+conin1:
 	bsr	constatus
-	beq	conin
+	beq	conin1
 	move.w	key_index.l,d1
 	and.l	#$ff,d1
 	lea	keyboard_buffer,a0
@@ -413,6 +468,8 @@ conin:
 	add.w	#1,d1
 	move.w	d1,key_index.l
 	rts
+
+
 ;
 ; Function 4: Write console character
 ;
@@ -422,6 +479,17 @@ conin:
 ; Return value: None
 ;
 conout:
+	move.w	iobyte,d0
+	lea	conout_table(pc),a0
+	jmp	selectioroutine
+
+conout_table:
+	dc.l	auxout1		; tty
+	dc.l	conout1		; crt
+	dc.l	list1		; batch mode
+	dc.l	dummyout1	; uc1
+
+conout1:
 	bsr	.cursorxor	; remove cursor highlight
 	and.l	#$000000ff,d1	; use only low byte
 	cmp.w	#0,.escseq	; check if esc sequence is ongoing
@@ -434,7 +502,7 @@ conout:
 	bsr	.handlectrl
 	bra	.check3
 .check2:
-	bsr	.conout1	; print normal char
+	bsr	.conout2	; print normal char
 .check3:
 	bsr	.cursorxor	; enable cursor highlight
 	rts
@@ -570,7 +638,7 @@ conout:
 	movem.l	(sp)+,d0-d2/a0
 	rts
 
-.conout1:
+.conout2:
 	; calculate character address in font
 	sub.b	#$20,d1		; space is first character in font
 	move.l	d1,d0
@@ -583,7 +651,7 @@ conout:
 	; copy character to screen
 	move.w	.row,d0
 	move.w	.column,d1
-	bsr	.conout2
+	bsr	.conout3
 	; update cursor position
 	move.w	.column,d0
 	addq.w	#1,d0
@@ -596,12 +664,12 @@ conout:
 	move.w	d0,.column
 	rts
 
-; conout2 - copy character to screen
+; conout3 - copy character to screen
 ;
 ; Input parameters: a0.l = address of character
 ;                   d0.w = row
 ;                   d1.w = column
-.conout2:
+.conout3:
 	; calculate destination address in screen
 	movem.l	d0-d1/a0-a1,-(sp)
 	mulu.w	#80*8,d0
@@ -891,7 +959,7 @@ conout:
 	move.w	.row,d0
 	move.w	.column,d1
 .eraeol1:
-	bsr	.conout2
+	bsr	.conout3
 	addq.w	#1,d1
 	cmp.w	#80,d1
 	bne	.eraeol1
@@ -1011,9 +1079,21 @@ keyboard_int:
 ; Return value: None
 ;
 list:
+	move.w	iobyte,d0
+	lsr.w	#6,d0
+	lea	list_table(pc),a0
+	jmp	selectioroutine
+
+list_table:
+	dc.l	auxout1		; tty
+	dc.l	conout1		; crt
+	dc.l	list1		; lpt
+	dc.l	dummyout1	; ul1
+
+list1:
 	bsr	listst			; check if printer is busy or paper is out
 	cmp.w	#0,d0
-	beq	list
+	beq	list1
 	move.b	d1,CIAA+PRB		; write character to parallel port
 					; this will drive /STROBE (/DRDY) automatically low, then high
 .waitack:
@@ -1031,9 +1111,21 @@ list:
 ;	d0.w: Character
 ;
 auxout:
+	move.w	iobyte,d0
+	lsr.w	#4,d0
+	lea	auxout_table(pc),a0
+	jmp	selectioroutine
+
+auxout_table:
+	dc.l	auxout1		; tty
+	dc.l	auxout1		; ptp
+	dc.l	dummyout1	; up1
+	dc.l	dummyout1	; up2
+
+auxout1:
 	bsr	auxoutstatus
 	cmp.w	#0,d0
-	beq	auxout
+	beq	auxout1
 	move.w	serial_flow_control,d0
 	cmp.w	#1,d0
 	beq	.flowcontrol
@@ -1061,9 +1153,21 @@ auxout:
 ;	d0.w: Character
 ;
 auxin:
+	move.w	iobyte,d0
+	lsr.w	#2,d0
+	lea	auxin_table(pc),a0
+	jmp	selectioroutine
+
+auxin_table:
+	dc.l	auxin1		; tty
+	dc.l	auxin1		; ptr
+	dc.l	dummyin1	; ur1
+	dc.l	dummyin1	; ur2
+
+auxin1:
 	bsr	auxinstatus
 	cmp.w	#0,d0
-	beq	auxin
+	beq	auxin1
 	bsr	read_serial_buffer
 	rts
 
@@ -1075,6 +1179,18 @@ auxin:
 ;   d0.w: $00ff if ready
 ;   d0.w: $0000 if not ready
 auxoutstatus:
+	move.w	iobyte,d0
+	lsr.w	#4,d0
+	lea	auxoutstatus_table(pc),a0
+	jmp	selectioroutine
+
+auxoutstatus_table:
+	dc.l	auxoutstatus1	; tty
+	dc.l	auxoutstatus1	; ptp
+	dc.l	dummyoutstatus1	; up1
+	dc.l	dummyoutstatus1	; up2
+
+auxoutstatus1:
 	move.w	CUSTOM+INTREQR,d0
 	and.w	#1,d0			; check TBE flag
 	beq	.exit
@@ -1090,6 +1206,18 @@ auxoutstatus:
 ;   d0.w: $00ff if ready
 ;   d0.w: $0000 if not ready
 auxinstatus:
+	move.w	iobyte,d0
+	lsr.w	#2,d0
+	lea	auxinstatus_table(pc),a0
+	jmp	selectioroutine
+
+auxinstatus_table:
+	dc.l	auxinstatus1	; tty
+	dc.l	auxinstatus1	; ptr
+	dc.l	dummyinstatus1	; ur1
+	dc.l	dummyinstatus1	; ur2
+
+auxinstatus1:
 	movem.l	d1-d2,-(sp)
 	move.w	#0,d0
 	move.w	serial_read_index,d1
@@ -1343,6 +1471,18 @@ writesector:
 ; Return value:
 ;	d0.w: $00ff = device ready, $0000 = device not ready
 listst:
+	move.w	iobyte,d0
+	lsr.w	#6,d0
+	lea	listst_table(pc),a0
+	jmp	selectioroutine
+
+listst_table:
+	dc.l	auxoutstatus1	; tty
+	dc.l	constatus1	; crt
+	dc.l	listst1		; lpt
+	dc.l	dummyoutstatus1	; ul1
+
+listst1:
 	move.b	CIAB+PRA,d0
 	and.b	#$3,d0			; check POUT and BUSY
 	bne	.devicenotready
@@ -1380,8 +1520,52 @@ getaddresstable:
 	dc.l	$400	; base address of first region
 	dc.l	CPMSTART-$408
 
-; Function 19 Get I/O byte: Not needed at first phase
-; Function 20 Set I/O byte: Not needed at first phase
+; Function 19 Get I/O byte
+;
+; Entry parameters:
+;	d0.w: $13
+; Return value:
+;	d0.w: I/O byte
+;
+; I/O Byte format:
+; device: | list | aux output | aux input | console |
+; bits:   | 7,6  | 5,4        | 3,2       | 1,0     |
+;
+; Console device values:
+; 0: serial port (tty)
+; 1: console (crt)
+; 2: batch mode (bat), console as the input, list device as the output device
+; 3: dummy (uc1)
+;
+; Aux input device values:
+; 0: serial port (tty)
+; 1: serial port (ptr)
+; 2: dummy (ur1)
+; 3: dummy (ur2)
+;
+; Aux output device values:
+; 0: serial port (tty)
+; 1: serial port (ptp)
+; 2: dummy (up1)
+; 3: dummy (up2)
+;
+; List device values:
+; 0: serial port (tty)
+; 1: console (crt)
+; 2: parallel port (lpt)
+; 3: dummy (ul1)
+getiobyte:
+	move.w	iobyte,d0
+	rts
+
+; Function 20 Set I/O byte
+;
+; Entry parameters:
+;	d0.w: $14
+;	d1.w: I/O byte value
+setiobyte:
+	move.w	d1,iobyte
+	rts
 
 ; Function 21 Flush buffers:
 ;
@@ -2408,7 +2592,7 @@ setkeymap:
 ; detect CPU
 ;
 detectcpu:
-	include "detectcpu.asm"
+	include "detect_cpu.asm"
 
 ;
 ; disable instruction and data cache if needed
@@ -2642,6 +2826,10 @@ serial_buffer:
 detected_cpu:
 	dc.l	0
 
+; i/o byte
+iobyte:
+	dc.w	0
+
 ; floppy variables
 fd_write:
 	dc.w	0
@@ -2747,7 +2935,7 @@ floppy_alv2:
 	even
 ; strings
 bios_str:
-	dc.b	"*** SturmBIOS for Commodore Amiga v0.61 ***",13,10
+	dc.b	"*** SturmBIOS for Commodore Amiga v0.62 ***",13,10
 	dc.b	"***   Coded by Juha Ollila  2021-2026   ***",13,10,13,10,0
 motor_error_str:
 	dc.b	13,10,"BIOS Error: Drive not ready",13,10,0
