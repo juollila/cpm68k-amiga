@@ -1,0 +1,1 @@
+cowgol -o misc.coo string.coo seqfile.coo startrek.cow starmain.cow

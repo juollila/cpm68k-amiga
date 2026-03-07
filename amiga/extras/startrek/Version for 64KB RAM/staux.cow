@@ -1,0 +1,811 @@
+#
+# Super Star Trek Classic (v1.1)
+# Retro Star Trek Game 
+# C Port Copyright (C) 1996  <Chris Nystrom>
+#
+# Reworked for Fuzix by Alan Cox (C) 2018
+#	- Removed all floating point
+#	- Fixed multiple bugs in the BASIC to C conversion
+#	- Fixed a couple of bugs in the BASIC that either got in during it's
+#	  conversion between BASICs or from the original trek
+#	- Put it on a diet to get it to run in 32K. No features were harmed
+#	  in the making of this code smaller.
+#
+# Adapted for HiTech C on CP/M by Ladislau Szilagyi 2023
+#
+# Ported to Cowgol on CP/M by Ladislau Szilagyi 2024
+#
+# This program is free software; you can redistribute it and/or modify
+# in any way that you wish. _Star Trek_ is a trademark of Paramount
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This is a C port of an old BASIC program: the classic Super Star Trek
+# game. It comes from the book _BASIC Computer Games_ edited by David Ahl
+# of Creative Computing fame. It was published in 1978 by Workman Publishing,
+# 1 West 39 Street, New York, New York, and the ISBN is: 0-89489-052-3.
+# 
+# See http://www.cactus.org/~nystrom/startrek.html for more info.
+#
+# Contact Author of C port at:
+#
+# Chris Nystrom
+# 1013 Prairie Dove Circle
+# Austin, Texas  78758
+#
+# E-Mail: cnystrom@gmail.com, nystrom@cactus.org
+#
+# BASIC -> Conversion Issues
+#
+#     - String Names changed from A$ to sA
+#     - Arrays changed from G(8,8) to map[9][9] so indexes can
+#       stay the same.
+#
+# Here is the original BASIC header:
+#
+# SUPER STARTREK - MAY 16, 1978 - REQUIRES 24K MEMORY
+#
+#**       **** STAR TREK ****        ****
+#** SIMULATION OF A MISSION OF THE STARSHIP ENTERPRISE,
+#** AS SEEN ON THE STAR TREK TV SHOW.
+#** ORIGINAL PROGRAM BY MIKE MAYFIELD, MODIFIED VERSION
+#** PUBLISHED IN DEC'S "101 BASIC GAMES", BY DAVE AHL.
+#** MODIFICATIONS TO THE LATTER (PLUS DEBUGGING) BY BOB
+#** LEEDOM - APRIL & DECEMBER 1974,
+#** WITH A LITTLE HELP FROM HIS FRIENDS . . .
+#** COMMENTS, EPITHETS, AND SUGGESTIONS SOLICITED --
+#** SEND TO:  R. C. LEEDOM
+#**           WESTINGHOUSE DEFENSE & ELECTRONICS SYSTEMS CNTR.
+#**           BOX 746, M.S. 338
+#**           BALTIMORE, MD  21203
+#**
+#** CONVERTED TO MICROSOFT 8 K BASIC 3/16/78 BY JOHN BORDERS
+#** LINE NUMBERS FROM VERSION STREK7 OF 1/12/75 PRESERVED AS
+#** MUCH AS POSSIBLE WHILE USING MULTIPLE STATMENTS PER LINE
+#
+#
+
+@decl sub print_char(c: uint8) @extern("print_char");
+@decl sub print(ptr: [uint8]) @extern("print");
+@decl sub print_nl() @extern("print_nl");
+@decl sub print_i16(v: int16) @extern("print_i16");
+
+@decl sub strcpy(dest: [uint8], src: [uint8]): (ret: [uint8]) @extern("strcpy");
+@decl sub strcat(dest: [uint8], src: [uint8]): (ret: [uint8]) @extern("strcat");
+
+@decl sub TO_FIXED00(x: int16): (ret: int16) @extern("TO_FIXED00");
+@decl sub get_damage(n: uint8): (ret: int16) @extern("get_damage");
+@decl sub set_damage(n: uint8, v:int16) @extern("set_damage");
+@decl sub get_dev_name(n: uint8): (ret: [uint8]) @extern("get_dev_name");
+@decl sub get_rand(spread: uint16): (ret: uint16) @extern("get_rand");
+@decl sub rand8(): (ret: uint8) @extern("rand8");
+@decl sub get_klingons(): (ret: int8) @extern("get_klingons");
+@decl sub get_docked(): (ret: int8) @extern("get_docked");
+@decl sub get_kdata_energy(n: uint8): (energy: int16) @extern("get_kdata_energy");
+@decl sub set_kdata_energy(n: uint8, energy: int16) @extern("set_kdata_energy");
+@decl sub distance_to(i:uint8): (ret:int16) @extern("distance_to");
+@decl sub abs32(v: int32): (ret: uint32) @extern("abs32");
+@decl sub FROM_FIXED00(x: int16): (ret: int16) @extern("FROM_FIXED00");
+@decl sub get_shield(): (ret: int16) @extern("get_shield");
+@decl sub set_shield(v: int16) @extern("set_shield");
+@decl sub get_kdata_x(n: uint8): (x: uint8) @extern("get_kdata_x");
+@decl sub get_kdata_y(n: uint8): (y: uint8) @extern("get_kdata_y");
+@decl sub ship_destroyed () @extern("ship_destroyed");
+@decl sub get_d4(): (ret: int16) @extern("get_d4");
+@decl sub print100(v: int16): (ret: [uint8]) @extern("print100");
+@decl sub yesno(): (ret: uint8) @extern("yesno");
+@decl sub get_stardate(): (ret: int16) @extern("get_stardate");
+@decl sub set_stardate(v: int16) @extern("set_stardate");
+@decl sub inoperable(u: uint8): (ret: uint8) @extern("inoperable");
+@decl sub get_energy(): (ret: int16) @extern("get_energy");
+@decl sub get_energy0(): (ret: int16) @extern("get_energy0");
+@decl sub set_energy(v: int16) @extern("set_energy");
+@decl sub input_int(): (ret: int16) @extern("input_int");
+@decl sub get_ship_x(): (ret: int16) @extern("get_ship_x");
+@decl sub get_ship_y(): (ret: int16) @extern("get_ship_y");
+@decl sub set_docked(v: int8) @extern("set_docked");
+@decl sub get_torps(): (ret: int8) @extern("get_torps");
+@decl sub set_torps(v: int8) @extern("set_torps");
+@decl sub get_torps0(): (ret: int8) @extern("get_torps0");
+@decl sub place_ship() @extern("place_ship");
+@decl sub get_time_start(): (ret: int16) @extern("get_time_start");
+@decl sub get_time_up(): (ret: int16) @extern("get_time_up");
+@decl sub end_of_time() @extern("end_of_time");;
+@decl sub input_f00(): (ret: int16) @extern("input_f00");
+@decl sub cint100(d:int16): (ret:int16) @extern("cint100");
+@decl sub get_c(x: uint8, y: uint8): (ret: int16) @extern("get_c");
+@decl sub set_ship_x(v: int16) @extern("set_ship_x");
+@decl sub set_ship_y(v: int16) @extern("set_ship_y");
+@decl sub get_quad_x(): (ret: uint8) @extern("get_quad_x");
+@decl sub set_quad_x(v: uint8) @extern("set_quad_x");
+@decl sub get_quad_y(): (ret: uint8) @extern("get_quad_y");
+@decl sub set_quad_y(v: uint8) @extern("set_quad_y");
+@decl sub new_quadrant() @extern("new_quadrant");
+@decl sub set_klingons(v: int8) @extern("set_klingons");
+@decl sub set_klingons_left(v: int8) @extern("set_klingons_left");
+@decl sub get_klingons_left(): (ret: int8) @extern("get_klingons_left");
+@decl sub won_game() @extern("won_game");
+@decl sub get_starbases(): (ret: int8) @extern("get_starbases");
+@decl sub set_starbases(v: int8) @extern("set_starbases");
+@decl sub get_starbases_left(): (ret: int8) @extern("get_starbases_left");
+@decl sub set_starbases_left(v: int8) @extern("set_starbases_left");
+@decl sub get_quad(x: uint8, y: uint8): (ret: int8) @extern("get_quad");
+@decl sub put_quad(x: uint8, y: uint8, val: int8) @extern("put_quad");
+@decl sub FROM_FIXED(x: int16): (ret: int16) @extern("FROM_FIXED");
+@decl sub TO_FIXED(x: int16): (ret: int16) @extern("TO_FIXED");
+@decl sub put_map(x: uint8, y: uint8, val: uint16) @extern("put_map");
+@decl sub get_map(x: uint8, y: uint8): (ret: uint16) @extern("get_map");
+@decl sub resign() @extern("resign");
+@decl sub repair_damage(warp:int16) @extern("repair_damage");
+@decl sub klingons_shoot() @extern("klingons_shoot");
+@decl sub klingons_move() @extern("klingons_move");
+@decl sub wipe_klingon(i: uint8) @extern("wipe_klingon");
+@decl sub get_quadname(): (ret: [uint8]) @extern("get_quadname");
+
+const MAP_VISITED := 0x1000;
+
+const Q_SPACE :=	0;
+const Q_STAR :=		1;
+const Q_BASE :=		2;
+const Q_KLINGON :=	3;
+const Q_SHIP :=		4;
+
+var quad_name: [uint8][17] := { "",
+	"Antares", "Rigel", "Procyon", "Vega", "Canopus", "Altair",
+	"Sagittarius", "Pollux", "Sirius", "Deneb", "Capella",
+	"Betelgeuse", "Aldebaran", "Regulus", "Arcturus", "Spica"
+};
+
+var sect_name: [uint8][5] := { "", " I", " II", " III", " IV" };
+
+sub quadrant_name(small:int8, y:uint8, x:uint8) @extern("quadrant_name") is
+	var dummy: [uint8];
+	if y < 1 or y > 8 or x < 1 or x > 8 then
+		dummy := strcpy(get_quadname(), "Unknown");
+	end if;
+
+	if x <= 4 then
+		dummy := strcpy(get_quadname(), quad_name[y]);
+	else
+		dummy := strcpy(get_quadname(), quad_name[y + 8]);
+	end if;
+
+	if small != 1 then
+		if x > 4 then
+			x := x - 4;
+		end if;
+		dummy := strcat(get_quadname(), sect_name[x]);
+	end if;
+
+	return;
+end sub;
+
+# commands --------------------------------------------------------------------------
+
+sub damage_control() @extern("damage_control") is
+	var repair_cost: int16 := 0;
+	var i: uint8;
+
+	if get_damage(6) < 0 then
+		print("Damage Control report not available.\n");
+	end if;
+
+	# Offer repair if docked 
+	if get_docked() == 1 then
+		# repair_cost is x.xx fixed point
+		repair_cost := 0;
+		i := 1;
+		while i <= 8 loop
+			if get_damage(i) < 0 then
+				repair_cost := repair_cost + 10;
+			end if;
+			i := i + 1;
+		end loop;
+
+		if repair_cost > 0 then
+			repair_cost := repair_cost + get_d4();
+			if repair_cost >= 100 then
+				repair_cost := 90;	# 0.9 
+			end if;
+
+			print("\nTechnicians standing by to effect repairs to your");
+			print("ship;\nEstimated time to repair: ");
+			print(print100(repair_cost));
+			print(" stardates.\nWill you authorize the repair order (y/Y=YES)?\n ");
+
+			if yesno() == 1 then
+				i := 1;
+				while i <= 8 loop
+					if get_damage(i) < 0 then
+						set_damage(i, 0);
+					end if;
+					i := i + 1;
+				end loop;
+				set_stardate(get_stardate() + (repair_cost + 5)/10 + 1);
+			end if;
+			return;
+		end if;
+	end if;
+
+	if get_damage(6) < 0 then
+		return;
+	end if;
+
+	print("Device            State of Repair\n");
+
+	i := 1;
+	while i <= 8 loop
+		print(get_dev_name(i));
+		print("      ");
+		print(print100(get_damage(i)));
+		print_nl();
+		i := i + 1;
+	end loop;
+	print_nl();
+end sub;
+
+sub shield_control() @extern("shield_control") is
+	var i:int16;
+
+	if inoperable(7) == 1 then
+		return;
+	end if;
+
+	print("Energy available = ");
+	print_i16(get_energy() + get_shield());
+	print("\n\nInput number of units to shields: ");
+
+	i := input_int();
+
+	if i < 0 or get_shield() == i then
+		print("\n<Shields Unchanged>\n\n");
+		return;
+	end if;
+
+	if i >= get_energy() + get_shield() then
+		print("Shield Control Reports:\n\n");
+		print("  'This is not the Federation Treasury.'\n");
+		print("<Shields Unchanged>\n\n");
+		return;
+	end if;
+
+	set_energy(get_energy() + get_shield() - i);
+	set_shield(i);
+
+	print("Deflector Control Room report:\n");
+	print("  'Shields now at ");
+	print_i16(get_shield());
+	print(" units per your command.'\n\n");
+end sub;
+
+sub man_energy(n: int16) is
+	set_energy(get_energy() - n - 10);
+
+	if get_energy() >= 0 then
+		return;
+	end if;
+
+	# FIXME:
+	#   This never occurs with the nav code as is - ancient trek versions
+	#   included shield power in movement allowance if shield control
+	#   was undamaged 
+	print("Shield Control supplies energy to complete maneuver.\n\n");
+
+	set_shield(get_shield() + get_energy());
+	set_energy(0);
+
+	if get_shield() <= 0 then
+		set_shield(0);
+	end if;
+end sub;
+
+#char *tilestr[] = {
+#	"   ",
+#	" * ",
+#	">!<", // Federation starbase
+#	"+K+", // Klingon battlecruiser
+#	"<*>"  // Your starship's position
+#};
+
+var srs_1:[uint8] := "  -1--2--3--4--5--6--7--8-\n";
+
+const GREEN := 1;	#"GREEN"
+const YELLOW := 2;	#"YELLOW"
+const RED := 3;		#"*RED*"
+const DOCKED := 4;	#"DOCKED"
+
+sub get_status(s: uint8): (ret: [uint8]) is
+	if s == GREEN then
+		ret := "green";
+	elseif s == YELLOW then
+		ret := "yellow";
+	elseif s == RED then
+		ret := "red";
+	else
+		ret := "docked";
+	end if;
+end sub;
+
+sub s_range_scan() @extern("s_range_scan") is
+	var i: uint8;
+	var j: uint8;
+	var status: uint8 := GREEN;
+
+	if get_energy() < get_energy0() / 10 then
+		status := YELLOW;
+	end if;
+
+	if get_klingons() > 0 then
+		status := RED;
+	end if;
+
+	set_docked(0);
+
+	i := FROM_FIXED00(get_ship_y()) as uint8 - 1;
+	while i <= FROM_FIXED00(get_ship_y()) as uint8 + 1 loop
+		j := FROM_FIXED00(get_ship_x()) as uint8 - 1;
+		while j <= FROM_FIXED00(get_ship_x()) as uint8 + 1 loop
+			if i >= 1 and i <= 8 and j >= 1 and j <= 8 then
+				if get_quad(j - 1, i - 1) == Q_BASE then
+					set_docked(1);
+					status := DOCKED;
+					set_energy(get_energy0());
+					set_torps(get_torps0());
+					print("Shields dropped for docking purposes.\n");
+					set_shield(0);
+				end if;
+			end if;
+		j := j + 1;
+		end loop;
+	i := i + 1;
+	end loop;
+
+	if get_damage(2) < 0 then
+		print("\n*** Short Range Sensors are out ***\n");
+		return;
+	end if;
+
+	print(srs_1);
+
+	i := 0;
+	while i < 8 loop
+		print_i16(i as int16 + 1);
+		print_char(' ');
+
+		j := 0;
+		while j < 8 loop
+			var v: int8 := get_quad(j, i);
+			var p: [uint8];
+			if v >= 0 and v <= 4 then
+				case v is
+					when 0: p := "   "; #Empty space
+					when 1: p := " * "; #Star
+					when 2: p := ">!<"; #Federation starbase
+					when 3: p := "+K+"; #Klingon battlecruiser
+					when else: p := "<*>"; #Your starship's position
+				end case;
+				print(p);
+			else
+				print("   "); #Empty space
+			end if;
+			j := j + 1;
+		end loop;
+
+		print_char(' ');
+		print_i16(i as int16 + 1);
+
+		case i is
+			when 0:	print("    Stardate            "); print_i16(FROM_FIXED(get_stardate())); 
+			when 1: print("    Condition           "); print(get_status(status)); 
+			when 2: print("    Quadrant            "); print_i16(get_quad_y() as int16); print(", ");print_i16(get_quad_x() as int16);
+			when 3: print("    Sector              "); 
+				print_i16(FROM_FIXED00(get_ship_y()));
+				print(", ");
+				print_i16(FROM_FIXED00(get_ship_x()));
+			when 4:	print("    Photon Torpedoes    "); print_i16(get_torps() as int16);
+			when 5: print("    Total Energy        "); print_i16(get_energy() + get_shield());
+			when 6:	print("    Shields             "); print_i16(get_shield());
+			when else:print("    Klingons Remaining  "); print_i16(get_klingons_left() as int16);
+		end case;
+		print_nl();
+
+	i := i + 1;
+	end loop;
+
+	print(srs_1);
+	print_nl();
+	return;
+end sub;
+
+sub complete_man(warp: int16, n: int16) is
+	var time_used: int16;
+
+	place_ship();
+	man_energy(n);
+
+	time_used := TO_FIXED(1);
+
+	# Ick FIXME - re really want to tidy up time to FIXED00
+	if warp < 100 then
+		time_used := TO_FIXED(FROM_FIXED00(warp));
+	end if;
+
+	set_stardate(get_stardate() + time_used);
+
+	if FROM_FIXED(get_stardate()) > get_time_start() + get_time_up() then
+		end_of_time();
+	end if;
+
+	s_range_scan();
+end sub;
+
+var p_warpmax: [uint8] := "    ";
+
+sub course_control() @extern("course_control") is
+	var i:int16;
+	var c1:int16;
+	var c2:int16;
+	var c3:int16;
+	var c4:int16;
+	var warp:int16;
+	var n:int16;
+	var z1:int16;
+	var z2:int16;
+	var x1:int16;
+	var x2:int16;
+	var x:int16;
+	var y:int16;
+	var p_w:[uint8] := p_warpmax;
+
+	p_w := strcpy(p_w, "8");
+
+	print("Course (0-9): ");
+
+	c1 := input_f00();
+
+	if c1 == 900 then
+		c1 := 100;
+	end if;
+
+	if c1 < 0 or c1 > 900 then
+		print("\nLt. Sulu reports:\n  Incorrect course data, sir!\n");
+		return;
+	end if;
+
+	if get_damage(1) < 0 then
+		p_w := strcpy(p_w, "0.2");
+	end if;
+
+	print("\nWarp Factor (0-"); print(p_w); print("): ");
+
+	warp := input_f00();
+
+	print_nl();
+
+	if get_damage(1) < 0 and warp > 20 then
+		print("Warp Engines are damaged. Maximum speed = Warp 0.2\n\n");
+		return;
+	end if;
+
+	if warp <= 0 then
+		return;
+	end if;
+
+	if warp > 800 then
+		print("Chief Engineer Scott reports:\n");
+		print("  The engines won't take warp ");
+		print(print100(warp));
+		print(" !\n\n");
+		return;
+	end if;
+
+	n := warp * 8;
+
+	n := cint100(n);	
+
+	# FIXME: should be  s + e - n > 0 if shield control undamaged 
+	if get_energy() - n < 0 then
+		print("Engineering reports:\n");
+		print("  Insufficient energy available for maneuvering");
+		print(" at warp ");
+		print(print100(warp));
+		print(" !\n\n");
+
+		if get_shield() >= n and get_damage(7) >= 0 then
+			print("Deflector Control Room acknowledges:\n");
+			print("  ");
+			print_i16(get_shield());
+			print(" units of energy presently deployed to shields.\n");
+		end if;
+		return;
+	end if;
+
+	klingons_move();
+
+	repair_damage(warp);
+
+	z1 := FROM_FIXED00(get_ship_y());
+	z2 := FROM_FIXED00(get_ship_x());
+	put_quad(z2 as uint8 - 1, z1 as uint8 - 1, Q_SPACE);
+
+	c2 := FROM_FIXED00(c1);		# Integer part 
+	c3 := c2 + 1;			# Next integer part
+	c4 := (c1 - TO_FIXED00(c2));	# Fractional element in fixed point
+
+	# x1 = 100 * c[1][c2] + (c[1][c3] - c[1][c2]) * c4;
+	x1 := 100 * get_c(c2 as uint8, 1) + (get_c(c3 as uint8, 1) - get_c(c2 as uint8, 1)) * c4;
+
+	# x2 = 100 * c[2][c2] + (c[2][c3] - c[2][c2]) * c4;
+	x2 := 100 * get_c(c2 as uint8, 2) + (get_c(c3 as uint8, 2) - get_c(c2 as uint8, 2)) * c4;
+
+	x := get_ship_y();
+	y := get_ship_x();
+
+	i := 1;
+	while i <= n loop
+		set_ship_y(get_ship_y() + x1);
+		set_ship_x(get_ship_x() + x2);
+
+		z1 := FROM_FIXED00(get_ship_y());
+		z2 := FROM_FIXED00(get_ship_x());	# ?? cint100 ?? 
+
+		# Changed quadrant ?
+		if z1 < 1 or z1 >= 9 or z2 < 1 or z2 >= 9 then
+			var outside: int8 := 0;		# Outside galaxy flag
+			var quad_y_old: uint8 := get_quad_y();
+			var quad_x_old: uint8 := get_quad_x();
+
+			x := (800 * get_quad_y() as int16) + x + (n * x1);
+			y := (800 * get_quad_x() as int16) + y + (n * x2);
+
+			set_quad_y((x / 800) as uint8);	# Fixed point to int and divide by 8
+			set_quad_x((y / 800) as uint8);	# Ditto
+
+			set_ship_y(x - (get_quad_y() as int16 * 800));
+			set_ship_x(y - (get_quad_x() as int16 * 800));
+
+			if get_ship_y() < 100 then
+				set_quad_y(get_quad_y() - 1);
+				set_ship_y(get_ship_y() + 800);
+			end if;
+
+			if get_ship_x() < 100 then
+				set_quad_x(get_quad_x() - 1);
+				set_ship_x(get_ship_x() + 800);
+			end if;
+
+			# check if outside galaxy
+
+			if get_quad_y() < 1 then
+				outside := 1;
+				set_quad_y(1);
+				set_ship_y(100);
+			end if;
+
+			if get_quad_y() > 8 then
+				outside := 1;
+				set_quad_y(8);
+				set_ship_y(800);
+			end if;
+
+			if get_quad_x() < 1 then
+				outside := 1;
+				set_quad_x(1);
+				set_ship_x(100);
+			end if;
+
+			if get_quad_x() > 8 then
+				outside := 1;
+				set_quad_x(8);
+				set_ship_x(800);
+			end if;
+
+			if outside == 1 then
+				print("LT. Uhura reports:\n");
+		       		print("  Message from Starfleet Command:\n\n");
+		       		print("  Permission to attempt crossing of galactic perimeter\n");
+		       		print("  is hereby *denied*. Shut down your engines.\n\n");
+		       		print("Chief Engineer Scott reports:\n");
+		       		print("  Warp Engines shut down at sector ");
+				print_i16(FROM_FIXED00(get_ship_y()));
+				print(" , ");
+				print_i16(FROM_FIXED00(get_ship_x()));
+				print(" of quadrant ");
+				print_i16(get_quad_y() as int16);
+				print(" , ");
+				print_i16(get_quad_x() as int16);
+				print(" .\n\n");
+			end if;
+
+			man_energy(n);
+
+			if FROM_FIXED(get_stardate()) > get_time_start() + get_time_up() then
+				end_of_time();
+			end if;
+
+			if get_quad_y() != quad_y_old or get_quad_x() != quad_x_old then
+				set_stardate(get_stardate() + TO_FIXED(1));
+				new_quadrant();
+			end if;
+
+			complete_man(warp, n);
+			return;
+		end if;
+
+		if get_quad(z2 as uint8 - 1, z1 as uint8 - 1) != Q_SPACE then	# Sector not empty
+			set_ship_y(get_ship_y() - x1);
+			set_ship_x(get_ship_x() - x2);
+			print("Warp Engines shut down at sector ");
+			print_i16(z1);
+			print(", ");
+			print_i16(z2);
+			print(" due to bad navigation.\n\n");
+			i := n + 1;
+		end if;
+
+		i := i + 1;
+	end loop;
+
+	complete_man(warp, n);
+end sub;
+
+sub no_klingon(): (ret: uint8) @extern("no_klingon") is
+	if get_klingons() <= 0 then
+		print("\nScience Officer Spock reports:\n");
+		print("  'Sensors show no enemy ships in this quadrant'\n\n");
+		ret := 1;
+	else
+		ret := 0;
+	end if;
+end sub;
+
+sub phaser_control() @extern("phaser_control") is
+	var i: uint8;
+	var phaser_energy: int32;
+	var h1: uint32;
+	var h: uint32;
+
+	if inoperable(4) == 1 then
+		return;
+	end if;
+
+	if no_klingon() == 1 then
+		return;
+	end if;
+
+	# There's Klingons on the starboard bow... 
+	if get_damage(8) < 0 then
+		print("\nComputer failure hampers accuracy.\n");
+	end if;
+
+	print("Phasers locked on target;\n");
+	print("Energy available = ");
+	print_i16(get_energy());
+	print(" units\n\nNumber of units to fire: ");
+
+	phaser_energy := input_int() as int32;
+
+	print_nl();
+
+	if phaser_energy <= 0 then
+		return;
+	end if;
+
+	if get_energy() - phaser_energy as int16 < 0 then
+		print("\nNot enough energy available.\n\n");
+		return;
+	end if;
+
+	set_energy(get_energy() - phaser_energy as int16);
+
+	# We can fire up to nearly 3000 points of energy so we do this
+	#   bit in 32bit math
+
+	if get_damage(8) < 0 then
+		phaser_energy := phaser_energy * get_rand(100) as int32;
+	else
+		phaser_energy := phaser_energy * 100;
+	end if;
+
+	h1 := (phaser_energy / get_klingons() as int32) as uint32;
+
+	i := 0;
+	while i <= 2 loop
+		if get_kdata_energy(i) > 0 then
+			# We are now 32bit with four digits accuracy
+			h := h1 * ((get_rand(100) + 200) as uint32);
+			# Takes us down to 2 digit accuracy 
+			h := h / (distance_to(i) as uint32);
+			
+			if h <= (15 * get_kdata_energy(i)) as uint32 then # was 0.15
+				print("Sensors show no damage to enemy at ");
+				print_i16(get_kdata_y(i) as int16);
+				print(", ");
+				print_i16(get_kdata_x(i) as int16);
+				print("\n\n");
+			else
+				h := abs32(FROM_FIXED00(h as int16) as int32);
+				set_kdata_energy(i, get_kdata_energy(i) - (h as int16));
+				print_i16(h as int16);
+				print(" unit hit on Klingon at sector ");
+				print_i16(get_kdata_y(i) as int16);
+				print(", ");
+				print_i16(get_kdata_x(i) as int16);
+				print_nl();
+			
+				if get_kdata_energy(i) <= 0 then
+					print("*** Klingon Destroyed ***\n\n");
+					set_klingons(get_klingons() - 1);
+					set_klingons_left(get_klingons_left() - 1);
+					wipe_klingon(i);
+					set_kdata_energy(i, 0);
+					# Minus a Klingon... 
+					put_map(get_quad_x(), get_quad_y(), get_map(get_quad_x(), get_quad_y()) - 0x100);
+					if get_klingons_left() <= 0 then
+						won_game();
+					end if;
+				else
+					print("   (Sensors show ");
+					print_i16(get_kdata_energy(i));
+					print(" units remaining.)\n\n");
+				end if;
+			end if;
+		end if;
+		i := i + 1;
+	end loop;
+
+	klingons_shoot();
+end sub;
+
+sub torpedo_hit(yp: int8, xp: int8) @extern("torpedo_hit") is
+	var i: uint8;
+
+	case get_quad(xp as uint8 - 1, yp as uint8 - 1) is
+		when Q_STAR:
+			print("Star at ");
+			print_i16(yp as int16);
+			print(", ");
+			print_i16(xp as int16);
+			print(" absorbed torpedo energy.\n\n");
+			return;
+		when Q_KLINGON:
+			print("*** Klingon Destroyed ***\n\n");
+			set_klingons(get_klingons() - 1);
+			set_klingons_left(get_klingons_left() - 1);
+
+			if get_klingons_left() <= 0 then
+				won_game();
+			end if;
+
+			i := 0;
+			while i <= 2 loop
+				if yp as uint8 == get_kdata_y(i) and xp as uint8 == get_kdata_x(i) then
+					set_kdata_energy(i, 0);
+				end if;
+				i := i + 1;
+			end loop;
+		
+			put_map(get_quad_x(), get_quad_y(), get_map(get_quad_x(), get_quad_y()) - 0x100);
+		when Q_BASE:					
+			print("*** Starbase Destroyed ***\n");
+			set_starbases(get_starbases() - 1);
+			set_starbases_left(get_starbases_left() - 1);
+
+			if get_starbases_left() <= 0 and get_klingons_left() as int16 <= FROM_FIXED(get_stardate()) - get_time_start() - get_time_up() then
+				print("That does it, Captain!!!\n");
+			     	print("You are hereby relieved of command\n");
+			        print("and sentenced to 99 stardates of hard labor on Cygnus 12!!\n");
+				resign();
+			end if;
+
+			print("Starfleet Command reviewing your record to consider court martial!\n");
+
+			set_docked(0);		# Undock
+			put_map(get_quad_x(), get_quad_y(), get_map(get_quad_x(), get_quad_y()) - 0x10);
+	end case;
+	put_quad(xp as uint8 - 1, yp as uint8 - 1, Q_SPACE);
+end sub;
+
+

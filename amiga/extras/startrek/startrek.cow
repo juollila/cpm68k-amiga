@@ -1,0 +1,378 @@
+#
+# Super Star Trek Classic (v1.1)
+# Retro Star Trek Game 
+# C Port Copyright (C) 1996  <Chris Nystrom>
+#
+# Reworked for Fuzix by Alan Cox (C) 2018
+#	- Removed all floating point
+#	- Fixed multiple bugs in the BASIC to C conversion
+#	- Fixed a couple of bugs in the BASIC that either got in during it's
+#	  conversion between BASICs or from the original trek
+#	- Put it on a diet to get it to run in 32K. No features were harmed
+#	  in the making of this code smaller.
+#
+# Adapted for HiTech C on CP/M by Ladislau Szilagyi 2023
+#
+# Ported to Cowgol on CP/M by Ladislau Szilagyi 2024
+#
+# This program is free software; you can redistribute it and/or modify
+# in any way that you wish. _Star Trek_ is a trademark of Paramount
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+#
+# This is a C port of an old BASIC program: the classic Super Star Trek
+# game. It comes from the book _BASIC Computer Games_ edited by David Ahl
+# of Creative Computing fame. It was published in 1978 by Workman Publishing,
+# 1 West 39 Street, New York, New York, and the ISBN is: 0-89489-052-3.
+# 
+# See http://www.cactus.org/~nystrom/startrek.html for more info.
+#
+# Contact Author of C port at:
+#
+# Chris Nystrom
+# 1013 Prairie Dove Circle
+# Austin, Texas  78758
+#
+# E-Mail: cnystrom@gmail.com, nystrom@cactus.org
+#
+# BASIC -> Conversion Issues
+#
+#     - String Names changed from A$ to sA
+#     - Arrays changed from G(8,8) to map[9][9] so indexes can
+#       stay the same.
+#
+# Here is the original BASIC header:
+#
+# SUPER STARTREK - MAY 16, 1978 - REQUIRES 24K MEMORY
+#
+#**       **** STAR TREK ****        ****
+#** SIMULATION OF A MISSION OF THE STARSHIP ENTERPRISE,
+#** AS SEEN ON THE STAR TREK TV SHOW.
+#** ORIGINAL PROGRAM BY MIKE MAYFIELD, MODIFIED VERSION
+#** PUBLISHED IN DEC'S "101 BASIC GAMES", BY DAVE AHL.
+#** MODIFICATIONS TO THE LATTER (PLUS DEBUGGING) BY BOB
+#** LEEDOM - APRIL & DECEMBER 1974,
+#** WITH A LITTLE HELP FROM HIS FRIENDS . . .
+#** COMMENTS, EPITHETS, AND SUGGESTIONS SOLICITED --
+#** SEND TO:  R. C. LEEDOM
+#**           WESTINGHOUSE DEFENSE & ELECTRONICS SYSTEMS CNTR.
+#**           BOX 746, M.S. 338
+#**           BALTIMORE, MD  21203
+#**
+#** CONVERTED TO MICROSOFT 8 K BASIC 3/16/78 BY JOHN BORDERS
+#** LINE NUMBERS FROM VERSION STREK7 OF 1/12/75 PRESERVED AS
+#** MUCH AS POSSIBLE WHILE USING MULTIPLE STATMENTS PER LINE
+#
+#
+
+include "misc.coh";
+include "string.coh";
+include "seqfile.coh";
+
+const CR := 0xD;
+
+#define TO_FIXED(x)	((x) * 10)
+#define FROM_FIXED(x)	((x) / 10)
+
+#define TO_FIXED00(x)	((x) * 100)
+#define FROM_FIXED00(x)	((x) / 100)
+
+sub TO_FIXED(x: int16): (ret: int16) @extern("TO_FIXED") is
+	ret := x * 10;
+end sub;
+
+sub FROM_FIXED(x: int16): (ret: int16) @extern("FROM_FIXED") is
+	ret := x / 10;
+end sub;
+
+sub TO_FIXED00(x: int16): (ret: int16) @extern("TO_FIXED00") is
+	ret := x * 100;
+end sub;
+
+sub FROM_FIXED00(x: int16): (ret: int16) @extern("FROM_FIXED00") is
+	ret := x / 100;
+end sub;
+
+#	Returns an integer from 1 to spread
+sub get_rand(spread: uint16): (ret: uint16) @extern("get_rand") is
+	var r: uint16;
+
+	r := xrnd();
+	ret := (r % spread) + 1;
+end sub;
+
+#	Get a random co-ordinate
+sub rand8(): (ret: uint8) @extern("rand8") is
+	ret := get_rand(8) as uint8;
+end sub;
+
+# An unsigned sqrt is all we need.
+#   What we are actually doing here is a smart version of calculating n^2
+#   repeatedly until we find the right one
+sub isqrt(i:int16): (ret: int16) @extern("isqrt") is
+	var b:int16 := 0x4000;
+	var q:int16 := 0;
+	var r:int16 := i;
+	var t:int16;
+
+	loop
+		if b == 0 then
+			break;
+		end if;
+
+		t := q + b;
+		q := q >> 1;
+		if r >= t then
+			r := r - t;
+			q := q + b;
+		end if;
+		b := b >> 2;
+	end loop;
+	ret := q;
+end sub;
+
+sub abs16(v: int16): (ret: uint16) @extern("abs16") is
+	if v >= 0 then
+		ret := v as uint16;
+	else
+		ret := -v as uint16;
+	end if;
+end sub;
+
+sub abs32(v: int32): (ret: uint32) @extern("abs32") is
+	if v >= 0 then
+		ret := v as uint32;
+	else
+		ret := -v as uint32;
+	end if;
+end sub;
+
+sub square00(t:int16): (ret:int16) @extern("square00") is
+	if abs16(t) > 181 then
+		t := t / 10;
+		t := t * t;
+	else
+		t := t * t;
+		t := t / 100;
+	end if;
+	ret := t;
+end sub;
+
+# Round off floating point numbers instead of truncating
+sub cint100(d:int16): (ret:int16) @extern("cint100") is
+	ret := (d + 50) / 100;
+end sub;
+
+#	Get a line from console (up to len bytes, until CR)
+sub input(p: [uint8], len: uint8) @extern("input") is
+	var c: uint8;
+	while len != 0 loop
+		c := get_char();
+		if (c == CR) then
+			break;
+		end if;
+		[p] := c; p := p + 1; len := len - 1;
+	end loop;
+	[p] := 0;
+end sub;
+
+sub yesno(): (ret: uint8) @extern("yesno") is
+	var ch: uint8 := get_char();
+	if (ch == 'y' or ch == 'Y') then
+		ret := 1;
+	else
+		ret := 0;
+	end if;
+end sub;
+
+var pbuf16:[uint8] := "                ";
+
+# Input a value between 0.00 and 9.99 */
+sub input_f00(): (ret: int16) @extern("input_f00") is
+	var p: [uint8] := pbuf16;
+	var ch: uint8;
+
+	input(p, 8);
+
+	if (isdigit([p]) == 0) then
+		ret := -1;
+		return;
+	end if;
+
+	ret := 100 * (([p] - '0') as int16); p := p + 1;
+
+	if ([p] == 0) then
+		return;
+	end if;
+
+	ch := [p]; p := p + 1;
+
+	if (ch != '.') then
+		ret := -1;
+		return;
+	end if;
+
+	if (isdigit([p]) == 0) then
+		ret := -1;
+		return;
+	end if;
+
+	ret := ret + 10 * (([p] - '0') as int16); p := p + 1;
+
+	if ([p] == 0) then
+		return;
+	end if;
+
+	if (isdigit([p]) == 0) then
+		ret := -1;
+		return;
+	end if;
+
+	ret := ret + (([p] - '0') as int16);
+end sub;
+
+# Integer: unsigned, or returns -1 for blank
+sub input_int(): (ret: int16) @extern("input_int") is
+	var p: [uint8] := pbuf16;
+
+	input(p, 8);
+
+	if [p] == 0 then
+		ret := -1;
+	else
+		ret := atoi(p);
+	end if;
+end sub;
+
+sub print100(v: int16): (ret: [uint8]) @extern("print100") is
+	var p: [uint8] := pbuf16;
+	var q: [uint8];
+
+	if v < 0 then
+		v := -v;
+		[p] := '-'; p := p + 1;
+	end if;
+
+	p := strcpy(p, itoa(v / 100));
+	p := p + strlen(p);
+	[p] := '.'; p := p + 1;
+	q := itoa(v % 100);
+
+	if (strlen(q) == 2) then
+		p := strcpy(p, q);
+	else
+		[p] := '0'; p := p + 1; [p] := [q]; p := p + 1; [p] := 0;
+	end if;
+
+	ret := pbuf16;
+end sub;
+
+var device_name: [uint8][9] := {
+	"                   ",
+	"Warp engines       ",
+	"Short range sensors",
+	"Long range sensors ",
+	"Phaser control     ",
+	"Photon tubes       ",
+	"Damage control     ",
+	"Shield control     ",
+	"Library computer   "
+};
+
+sub get_dev_name(n: uint8): (ret: [uint8]) @extern("get_dev_name") is
+	if n < 0 or n > 8 then
+		n := 0;
+	end if;
+	ret := device_name[n];
+end sub;
+
+# display text files ---------------------------------------------------
+
+const MAXROW := 24;
+
+var infcb: FCB;
+
+# do not check record length...
+sub fgets(buffer: [uint8], fcb: [FCB]): (eof: uint8) is
+	var ch: uint8;
+	var err: uint8;
+
+	loop
+		(ch, err) := FCBGetChar(fcb);
+
+		if err == ERR_EOF then 
+			eof := 1;
+			return;
+		end if;
+
+		if ch == CR then 		# if is a CR,
+			(ch, err) := FCBGetChar(fcb); 	# read also the next LF
+			[buffer] := ch; 	#store only the LF
+			buffer := buffer + 1;
+			[buffer] := 0; 		#then store end-of-string
+			eof := 0;
+			return;
+		else
+			[buffer] := ch; buffer := buffer + 1;
+		end if;		
+
+	end loop;
+end sub;
+
+# we suppose that the files to be displayed have only lines shorter than 200 chars... 
+record _buffer is
+chars: uint8[200];
+end record;
+
+var buffer: _buffer;
+
+sub showfile(filename:[uint8]) @extern("showfile") is
+	var row: int16 := 0;
+	var pbuffer: [uint8] := &buffer.chars[0];
+	var dummy: uint8;
+
+	if FCBOpenIn(&infcb, filename, IO_TEXT) != SUCCESS then
+		return;
+	end if;
+		
+	while fgets(pbuffer, &infcb) == 0 loop
+		print(pbuffer); 
+		row := row + 1;
+		if row > MAXROW - 3 then
+			dummy := get_char();
+			row := 0;
+		end if;
+	end loop;
+	dummy := FCBClose(&infcb);
+end sub;
+
+#unsigned int map[9][9]		/* Galaxy. BCD of k b s plus flag */
+# we have no two dimensional arrays, therefore...
+var map: uint16[81];		# Galaxy 9x9. BCD of k b s plus flag
+
+sub get_map(x: uint8, y: uint8): (ret: uint16) @extern("get_map") is
+	ret := map[(y*9)+x];
+end sub;
+
+sub put_map(x: uint8, y: uint8, val: uint16) @extern("put_map") is
+	map[(y*9)+x] := val;
+end sub;
+
+# Movement indices 1-9 (9 is wrap of 1)
+#char c[3][10] =	/* Movement indices 1-9 (9 is wrap of 1) */
+#{
+#	{0},
+#	{0, 0, -1, -1, -1, 0, 1, 1, 1, 0},
+#	{1, 1, 1, 0, -1, -1, -1, 0, 1, 1}
+#};
+# 
+# we have no two dimensional arrays, therefore...
+var c: int8[30] := {0,0,0,0,0,0,0,0,0,0, 0,0,-1,-1,-1,0,1,1,1,0, 1,1,1,0,-1,-1,-1,0,1,1};
+
+sub get_c(x: uint8, y: uint8): (ret: int16) @extern("get_c") is
+	ret := c[(y*10)+x] as int16;
+end sub;
+
+
