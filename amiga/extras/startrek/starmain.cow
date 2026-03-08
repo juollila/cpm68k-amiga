@@ -67,8 +67,8 @@
 #
 #
 
-include "misc.coh";
-include "string.coh";
+include "cowgol.coh";
+include "strings.coh";
 
 @decl sub TO_FIXED(x: int16): (ret: int16) @extern("TO_FIXED");
 @decl sub FROM_FIXED(x: int16): (ret: int16) @extern("FROM_FIXED");
@@ -137,6 +137,17 @@ var ship_y: int16;		# Current Sector Position of Enterprise, fixed point
 var ship_x: int16;
 var stardate: int16;		# Current Stardate
 
+sub strcat(s1: [uint8], s2: [uint8]): (res: [uint8]) is
+	res := s1;
+	MemCopy(s2, StrLen(s2), s1+StrLen(s1));
+end sub;
+
+sub itoa(i: int16): (res: [uint8]) is
+	var buffer: uint8[12];
+	var pe := IToA(i as int32, 10, &buffer[0]);
+	res := &buffer[0];
+end sub;
+
 #char quad[8][8];
 # we have no two dimensional arrays, therefore...
 var quad: int8[64];
@@ -161,13 +172,13 @@ var sect_name: [uint8][5] := { "", " I", " II", " III", " IV" };
 
 sub quadrant_name(small:int8, y:uint8, x:uint8) is
 	if y < 1 or y > 8 or x < 1 or x > 8 then
-		quadname := strcpy(quadname, "Unknown");
+		CopyString("Unknown", quadname);
 	end if;
 
 	if x <= 4 then
-		quadname := strcpy(quadname, quad_name[y]);
+		CopyString(quad_name[y], quadname);
 	else
-		quadname := strcpy(quadname, quad_name[y + 8]);
+		CopyString(quad_name[y + 8], quadname);
 	end if;
 
 	if small != 1 then
@@ -871,7 +882,7 @@ sub course_control() is
 	var y:int16;
 	var p_w:[uint8] := p_warpmax;
 
-	p_w := strcpy(p_w, "8");
+	CopyString("8", p_w);
 
 	print("Course (0-9): ");
 
@@ -887,7 +898,7 @@ sub course_control() is
 	end if;
 
 	if damage[1] < 0 then
-		p_w := strcpy(p_w, "0.2");
+		CopyString("0.2", p_w);
 	end if;
 
 	print("\nWarp Factor (0-"); print(p_w); print("): ");
