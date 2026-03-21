@@ -148,6 +148,41 @@ sub itoa(i: int16): (res: [uint8]) is
 	res := &buffer[0];
 end sub;
 
+var prng_state: uint32;		# pseudo random generator state
+
+sub xrndseed() is
+	# Use vertical and horizontal position of beam as a seed
+	var VHPOSR: [uint16] := 0xDFF006; 
+	prng_state := [VHPOSR] as uint32;
+end sub;
+
+sub xrnd(): (res: uint16) @extern("xrnd") is
+	var x: uint32 := prng_state;
+
+	@asm "move.l (", x, "), %d0";
+
+	# x := x xor (x << 13);
+	@asm "move.l %d0, %d1";
+	@asm "lsl.l #13, %d1";
+	@asm "xor.l %d1, %d0";
+
+	# x := x xor (x << 17);
+	@asm "move.l %d0, %d1";
+	@asm "lsl.l #17, %d1";
+	@asm "xor.l %d1, %d0";
+
+	# x := x xor (x << 5);
+	@asm "move.l %d0, %d1";
+	@asm "lsl.l #5, %d1";
+	@asm "xor.l %d1, %d0";
+
+	@asm "move.l %d0, (", x, ")";
+
+	prng_state := x;
+	res := x as uint16;
+end sub;
+
+
 #char quad[8][8];
 # we have no two dimensional arrays, therefore...
 var quad: int8[64];
@@ -1599,7 +1634,7 @@ sub galaxy_map() is
 
 		quadrant_name(1, i, 1);
 
-		j0 := 11 - (strlen(quadname) as uint8 / 2);
+		j0 := 11 - (StrLen(quadname) as uint8 / 2);
 
 		j := 0;
 		while j < j0 loop
@@ -1615,13 +1650,13 @@ sub galaxy_map() is
 			j := j + 1;
 		end loop;
 
-		if (strlen(quadname) % 2) == 0 then
+		if (StrLen(quadname) % 2) == 0 then
 			print_char(' ');
 		end if;
 
 		quadrant_name(1, i, 5);
 
-		j0 := 12 - (strlen(quadname) as uint8 / 2);
+		j0 := 12 - (StrLen(quadname) as uint8 / 2);
 
 		j := 0;
 		while j < j0 loop
@@ -1695,23 +1730,23 @@ sub new_game() is
 		input(p, 4);
 		print_nl();
 
-		if 0 == strcasecmp(p, "nav") then
+		if 0 == StrICmp(p, "nav") then
 			course_control();
-		elseif 0 == strcasecmp(p, "srs") then
+		elseif 0 == StrICmp(p, "srs") then
 			s_range_scan();
-		elseif 0 == strcasecmp(p, "lrs") then
+		elseif 0 == StrICmp(p, "lrs") then
 			l_range_scan();
-		elseif 0 == strcasecmp(p, "pha") then
+		elseif 0 == StrICmp(p, "pha") then
 			phaser_control();
-		elseif 0 == strcasecmp(p, "tor") then
+		elseif 0 == StrICmp(p, "tor") then
 			photon_tor();
-		elseif 0 == strcasecmp(p, "shi") then
+		elseif 0 == StrICmp(p, "shi") then
 			shield_control();
-		elseif 0 == strcasecmp(p, "dam") then
+		elseif 0 == StrICmp(p, "dam") then
 			damage_control();
-		elseif 0 == strcasecmp(p, "com") then
+		elseif 0 == StrICmp(p, "com") then
 			lib_computer();
-		elseif 0 == strcasecmp(p, "xxx") then
+		elseif 0 == StrICmp(p, "xxx") then
 			resign();
 		else 
 			print("Enter one of the following:\n\n");
@@ -1729,7 +1764,7 @@ sub new_game() is
 end sub;
 
 sub end_of_game() is
-	exit();
+	Exit();
 end sub;
 
 @impl sub resign is
@@ -1764,7 +1799,7 @@ end sub;
 	end if;
 
 	end_of_game();
-	exit();
+	Exit();
 end sub;
 
 # Main
