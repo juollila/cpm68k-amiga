@@ -106,6 +106,11 @@ adf: boot-with-checksum.bin programs
 	cpmcp -f amiga ../adf/cpm-extras.adf ../extras/kermit/kermit.68k 0:
 	cpmcp -t -f amiga ../adf/cpm-extras.adf ../extras/kermit/kermit.txt 0:
 	cpmcp -f amiga ../adf/cpm-extras.adf ../extras/com/com.68k 0:
+	cpmcp -t -f amiga ../adf/cpm-extras.adf ../extras/startrek/st.txt 0:
+	cpmcp -t -f amiga ../adf/cpm-extras.adf ../extras/startrek/st.log 0:
+	cpmcp -t -f amiga ../adf/cpm-extras.adf ../extras/startrek/st.int 0:
+	cpmcp -t -f amiga ../adf/cpm-extras.adf ../extras/startrek/st.fat 0:
+	cpmcp -f amiga ../adf/cpm-extras.adf ../extras/startrek/startrek.68k 0:
 
 	#cp ../adf/amiga-blank-dd-ffs.adf ../adf/cpm-pascal.adf
 	#mkfs.cpm -f amiga -b boot-with-checksum.bin ../adf/cpm-pascal.adf

@@ -67,9 +67,14 @@
 #
 #
 
-include "misc.coh";
-include "string.coh";
-include "seqfile.coh";
+include "cowgol.coh";
+include "strings.coh";
+include "file.coh";
+
+@decl sub atoi(s: [uint8]): (res: int32) @extern("atoi");
+@decl sub itoa(i: int16): (res: [uint8]) @extern("itoa");
+@decl sub xrnd(): (ret: uint16) @extern("xrnd");
+@decl sub isdigit(c: uint8): (ret: uint16) @extern("isdigit");
 
 const CR := 0xD;
 
@@ -242,7 +247,7 @@ sub input_int(): (ret: int16) @extern("input_int") is
 	if [p] == 0 then
 		ret := -1;
 	else
-		ret := atoi(p);
+		ret := atoi(p) as int16;
 	end if;
 end sub;
 
@@ -255,13 +260,13 @@ sub print100(v: int16): (ret: [uint8]) @extern("print100") is
 		[p] := '-'; p := p + 1;
 	end if;
 
-	p := strcpy(p, itoa(v / 100));
-	p := p + strlen(p);
+	CopyString(itoa(v / 100), p);
+	p := p + StrLen(p);
 	[p] := '.'; p := p + 1;
 	q := itoa(v % 100);
 
-	if (strlen(q) == 2) then
-		p := strcpy(p, q);
+	if (StrLen(q) == 2) then
+		CopyString(q, p);
 	else
 		[p] := '0'; p := p + 1; [p] := [q]; p := p + 1; [p] := 0;
 	end if;
@@ -297,18 +302,17 @@ var infcb: FCB;
 # do not check record length...
 sub fgets(buffer: [uint8], fcb: [FCB]): (eof: uint8) is
 	var ch: uint8;
-	var err: uint8;
 
 	loop
-		(ch, err) := FCBGetChar(fcb);
+		ch := FCBGetChar(fcb);
 
-		if err == ERR_EOF then 
+		if ch ==  0x1A then 
 			eof := 1;
 			return;
 		end if;
 
 		if ch == CR then 		# if is a CR,
-			(ch, err) := FCBGetChar(fcb); 	# read also the next LF
+			ch := FCBGetChar(fcb); 	# read also the next LF
 			[buffer] := ch; 	#store only the LF
 			buffer := buffer + 1;
 			[buffer] := 0; 		#then store end-of-string
@@ -333,7 +337,7 @@ sub showfile(filename:[uint8]) @extern("showfile") is
 	var pbuffer: [uint8] := &buffer.chars[0];
 	var dummy: uint8;
 
-	if FCBOpenIn(&infcb, filename, IO_TEXT) != SUCCESS then
+	if FCBOpenIn(&infcb, filename) != 0 then
 		return;
 	end if;
 		
