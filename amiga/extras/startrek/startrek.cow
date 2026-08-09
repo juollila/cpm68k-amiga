@@ -15,6 +15,8 @@
 #
 # Ported to Cowgol on CP/M by Ladislau Szilagyi 2024
 #
+# Ported to Amiga CP/M-68k by Juha Ollila 2026
+#
 # This program is free software; you can redistribute it and/or modify
 # in any way that you wish. _Star Trek_ is a trademark of Paramount
 # 
@@ -71,10 +73,10 @@ include "cowgol.coh";
 include "strings.coh";
 include "file.coh";
 
+@decl sub xrnd(): (res: uint16) @extern("xrnd");
+@decl sub isdigit(c: uint8): (res: uint16) @extern("isdigit");
 @decl sub atoi(s: [uint8]): (res: int32) @extern("atoi");
 @decl sub itoa(i: int16): (res: [uint8]) @extern("itoa");
-@decl sub xrnd(): (ret: uint16) @extern("xrnd");
-@decl sub isdigit(c: uint8): (ret: uint16) @extern("isdigit");
 
 const CR := 0xD;
 

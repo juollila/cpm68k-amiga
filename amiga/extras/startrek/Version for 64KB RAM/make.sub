@@ -1,1 +1,0 @@
-cowgol -b -o misc.coo string.coo seqfile.coo sttrek.cow staux.cow stmain.cow

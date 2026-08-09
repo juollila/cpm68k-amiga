@@ -1,0 +1,71 @@
+#
+# Some utility routines for Star Trek game on Amiga CP/M-68k
+#
+# Coded by Juha Ollila 2026
+#
+
+include "cowgol.coh";
+include "strings.coh";
+
+var prng_state: uint16;		# pseudo random generator state
+
+sub atoi(s: [uint8]): (res: int32) @extern("atoi") is
+	var ptr: [uint8];
+	(res, ptr) := AToI(s);
+end sub;
+
+sub isdigit(c: uint8): (res: uint16) @extern("isdigit") is
+	if c < '0' or c > '9' then
+		res := 0;
+	else
+		res := 1;
+	end if;
+end sub;
+
+sub strcat(s1: [uint8], s2: [uint8]): (res: [uint8]) @extern("strcat") is
+	res := s1;
+	MemCopy(s2, StrLen(s2), s1+StrLen(s1));
+end sub;
+
+sub itoa(i: int16): (res: [uint8]) @extern("itoa") is
+	var buffer: uint8[12];
+	var pe := IToA(i as int32, 10, &buffer[0]);
+	res := &buffer[0];
+end sub;
+
+sub xrndseed() @extern("xrndseed") is
+	# Use vertical and horizontal position of beam as a seed
+	var VHPOSR: [uint16] := 0xDFF006; 
+	prng_state := [VHPOSR];
+	if prng_state == 0 then
+		prng_state := 1;
+	end if;
+end sub;
+
+sub xrnd(): (res: uint16) @extern("xrnd") is
+	var x: uint16 := prng_state;
+
+	@asm "move.w (", x, "), %d0";
+
+	# x := x xor (x << 7)
+	@asm "move.w %d0, %d1";
+	@asm "lsl.w #7, %d1";
+	@asm "eor.w %d1, %d0";
+
+	# x := x xor (x >> 9)
+	@asm "move.w %d0, %d1";
+	@asm "move.l #9, %d2";
+	@asm "lsr.w %d2, %d1";
+	@asm "eor.w %d1, %d0";
+
+	# x := x xor (x << 8)
+	@asm "move.w %d0, %d1";
+	@asm "lsl.w #8, %d1";
+	@asm "eor.w %d1, %d0";
+
+	@asm "move.w %d0, (", x, ")";
+
+	prng_state := x;
+	res := x;
+end sub;
+
